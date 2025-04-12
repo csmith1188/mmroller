@@ -1,0 +1,20 @@
+# SQLite database files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+
+# Database backup files
+*.bak
+*.backup
+*.dump
+
+# Database binary log files
+*.bin
+*.log
+
+# Other database related files
+*.mdb
+*.ldb
+*.dbf 

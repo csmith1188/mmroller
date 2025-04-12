@@ -24,7 +24,7 @@
                                 <div class="list-group-item">
                                     <div class="d-flex justify-content-between align-items-center">
                                         <div>
-                                            <a href="/profile/<%= player.id %>"><%= player.username %></a>
+                                            <a href="/profile/<%= player.user_id %>"><%= player.username %></a>
                                             <% if (player.position) { %>
                                                 <span class="text-muted">(Position <%= player.position %>)</span>
                                             <% } %>
@@ -38,27 +38,31 @@
                         </div>
 
                         <% if (match.status !== 'completed') { %>
-                            <% if (match.is_player || match.is_admin) { %>
+                            <% if (match.is_player) { %>
                                 <div class="card mb-4">
                                     <div class="card-header">
                                         <h5 class="mb-0">Submit Match Results</h5>
                                     </div>
                                     <div class="card-body">
                                         <% if (match.current_submission) { %>
-                                            <div class="alert alert-info mb-3">
-                                                <h6>Your Current Submission</h6>
-                                                <% match.players.forEach(player => { %>
-                                                    <p><%= player.username %>: <%= match.current_submission.scores[player.id] || 'Not submitted' %></p>
-                                                <% }); %>
-                                                <small class="text-muted">Submitted on: <%= new Date(match.current_submission.submitted_at).toLocaleString() %></small>
+                                            <div class="card mb-3">
+                                                <div class="card-header">
+                                                    <h6 class="mb-0">Your Current Submission</h6>
+                                                </div>
+                                                <div class="card-body">
+                                                    <% match.players.forEach((player, index) => { %>
+                                                        <p class="mb-1"><%= player.username %>: <%= match.current_submission.scores[index] %></p>
+                                                    <% }); %>
+                                                    <small class="text-muted">Submitted on: <%= new Date(match.current_submission.submitted_at).toLocaleString() %></small>
+                                                </div>
                                             </div>
                                         <% } %>
 
                                         <form action="/matches/<%= match.id %>/scores" method="POST">
                                             <% match.players.forEach(player => { %>
                                                 <div class="mb-3">
-                                                    <label for="score_<%= player.id %>" class="form-label"><%= player.username %> Score</label>
-                                                    <input type="number" class="form-control" id="score_<%= player.id %>" name="scores[<%= player.id %>]" required>
+                                                    <label for="score_<%= player.user_id %>" class="form-label"><%= player.username %> Score</label>
+                                                    <input type="number" class="form-control" id="score_<%= player.user_id %>" name="scores[<%= player.user_id %>]" required>
                                                 </div>
                                             <% }); %>
                                             <button type="submit" class="btn btn-primary">Submit Scores</button>
@@ -67,7 +71,7 @@
                                 </div>
                             <% } %>
 
-                            <% if (match.is_admin) { %>
+                            <% if (match.is_admin === 1) { %>
                                 <div class="card mb-4">
                                     <div class="card-header">
                                         <h5 class="mb-0">Admin Actions</h5>
@@ -85,17 +89,17 @@
                                             <button type="submit" class="btn btn-primary">Update Status</button>
                                         </form>
 
-                                        <% if (match.submissions && match.submissions.length > 0) { %>
+                                        <% if (submissions && submissions.length > 0) { %>
                                             <h6>Player Submissions</h6>
                                             <div class="list-group mb-3">
-                                                <% match.submissions.forEach(submission => { %>
+                                                <% submissions.forEach(submission => { %>
                                                     <div class="list-group-item">
                                                         <div class="d-flex justify-content-between align-items-center">
                                                             <div>
                                                                 <strong><%= submission.username %></strong>
                                                                 <div class="mt-2">
-                                                                    <% match.players.forEach(player => { %>
-                                                                        <p class="mb-1"><%= player.username %>: <%= submission.scores[player.id] %></p>
+                                                                    <% match.players.forEach((player, index) => { %>
+                                                                        <p class="mb-1"><%= player.username %>: <%= submission.scores[index] %></p>
                                                                     <% }); %>
                                                                 </div>
                                                                 <small class="text-muted">Submitted on: <%= new Date(submission.submitted_at).toLocaleString() %></small>
@@ -109,6 +113,24 @@
                                                 <% }); %>
                                             </div>
                                         <% } %>
+                                    </div>
+                                </div>
+                            <% } else if (!match.is_player && match.current_submission) { %>
+                                <div class="card mb-4">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">Your Submission</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="list-group">
+                                            <div class="list-group-item">
+                                                <div class="mt-2">
+                                                    <% match.players.forEach((player, index) => { %>
+                                                        <p class="mb-1"><%= player.username %>: <%= match.current_submission.scores[index] %></p>
+                                                    <% }); %>
+                                                </div>
+                                                <small class="text-muted">Submitted on: <%= new Date(match.current_submission.submitted_at).toLocaleString() %></small>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             <% } %>
