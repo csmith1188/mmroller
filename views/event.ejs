@@ -54,17 +54,47 @@
                                                             Actions
                                                         </button>
                                                         <ul class="dropdown-menu dropdown-menu-end">
-                                                            <li>
-                                                                <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#kickModal<%= participant.id %>">
-                                                                    Kick
-                                                                </button>
-                                                            </li>
-                                                            <li>
-                                                                <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#banModal<%= participant.id %>">
-                                                                    Ban
-                                                                </button>
-                                                            </li>
+                                                            <% if (participant.is_banned) { %>
+                                                                <li>
+                                                                    <button type="button" class="dropdown-item text-success" data-bs-toggle="modal" data-bs-target="#unbanModal<%= participant.id %>">
+                                                                        Unban
+                                                                    </button>
+                                                                </li>
+                                                            <% } else { %>
+                                                                <li>
+                                                                    <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#kickModal<%= participant.id %>">
+                                                                        Kick
+                                                                    </button>
+                                                                </li>
+                                                                <li>
+                                                                    <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#banModal<%= participant.id %>">
+                                                                        Ban
+                                                                    </button>
+                                                                </li>
+                                                            <% } %>
                                                         </ul>
+                                                    </div>
+
+                                                    <!-- Unban Modal -->
+                                                    <div class="modal fade" id="unbanModal<%= participant.id %>" tabindex="-1">
+                                                        <div class="modal-dialog">
+                                                            <div class="modal-content">
+                                                                <div class="modal-header">
+                                                                    <h5 class="modal-title">Unban Participant</h5>
+                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                                </div>
+                                                                <div class="modal-body">
+                                                                    <p>Are you sure you want to unban <strong><%= participant.username %></strong> from this event?</p>
+                                                                    <p>They will be able to rejoin the event.</p>
+                                                                </div>
+                                                                <div class="modal-footer">
+                                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                    <form action="/events/<%= event.id %>/unban/<%= participant.id %>" method="POST">
+                                                                        <button type="submit" class="btn btn-success">Unban</button>
+                                                                    </form>
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     </div>
 
                                                     <!-- Kick Modal -->

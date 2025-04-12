@@ -120,11 +120,23 @@ CREATE TABLE IF NOT EXISTS player_event_stats (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Create event_bans table
+-- Create organization_bans table
+CREATE TABLE IF NOT EXISTS organization_bans (
+    organization_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    banned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status TEXT DEFAULT 'active',
+    PRIMARY KEY (organization_id, user_id),
+    FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Modify event_bans table to include status
 CREATE TABLE IF NOT EXISTS event_bans (
     event_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     banned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    status TEXT DEFAULT 'active',
     PRIMARY KEY (event_id, user_id),
     FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE

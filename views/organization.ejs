@@ -105,16 +105,24 @@
                                                         <% } %>
                                                         <li><hr class="dropdown-divider"></li>
                                                     <% } %>
-                                                    <li>
-                                                        <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#kickModal<%= member.id %>">
-                                                            Kick
-                                                        </button>
-                                                    </li>
-                                                    <li>
-                                                        <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#banModal<%= member.id %>">
-                                                            Ban
-                                                        </button>
-                                                    </li>
+                                                    <% if (member.is_banned) { %>
+                                                        <li>
+                                                            <button type="button" class="dropdown-item text-success" data-bs-toggle="modal" data-bs-target="#unbanModal<%= member.id %>">
+                                                                Unban
+                                                            </button>
+                                                        </li>
+                                                    <% } else { %>
+                                                        <li>
+                                                            <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#kickModal<%= member.id %>">
+                                                                Kick
+                                                            </button>
+                                                        </li>
+                                                        <li>
+                                                            <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#banModal<%= member.id %>">
+                                                                Ban
+                                                            </button>
+                                                        </li>
+                                                    <% } %>
                                                 </ul>
                                             </div>
 
@@ -154,6 +162,28 @@
                                                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                                                             <form action="/organizations/<%= organization.id %>/remove-admin/<%= member.id %>" method="POST">
                                                                 <button type="submit" class="btn btn-danger">Remove Admin</button>
+                                                            </form>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <!-- Unban Modal -->
+                                            <div class="modal fade" id="unbanModal<%= member.id %>" tabindex="-1">
+                                                <div class="modal-dialog">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header">
+                                                            <h5 class="modal-title">Unban Member</h5>
+                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                            <p>Are you sure you want to unban <strong><%= member.username %></strong> from the organization?</p>
+                                                            <p>They will be able to rejoin the organization.</p>
+                                                        </div>
+                                                        <div class="modal-footer">
+                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                            <form action="/organizations/<%= organization.id %>/unban/<%= member.id %>" method="POST">
+                                                                <button type="submit" class="btn btn-success">Unban</button>
                                                             </form>
                                                         </div>
                                                     </div>

@@ -163,13 +163,14 @@ router.post('/profile/change-password', (req, res) => {
 router.get('/profile/:id', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
-    const userId = req.params.id;
-    const currentUserId = req.session.userId;
+    const profileId = req.params.id;
+    const userId = req.session.userId;
+    const isViewingOwnProfile = userId === parseInt(profileId);
 
     try {
-        // Get user info
+        // Get user details
         const user = await new Promise((resolve, reject) => {
-            db.get('SELECT id, username FROM users WHERE id = ?', [userId], (err, row) => {
+            db.get('SELECT * FROM users WHERE id = ?', [profileId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -179,10 +180,10 @@ router.get('/profile/:id', async (req, res) => {
             return res.status(404).send('User not found');
         }
 
-        // Get user's organizations
+        // Get user's organizations (excluding banned ones)
         const organizations = await new Promise((resolve, reject) => {
             db.all(`
-                SELECT o.*, 
+                SELECT o.*,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_admins 
                            WHERE organization_id = o.id AND user_id = ?
@@ -191,31 +192,85 @@ router.get('/profile/:id', async (req, res) => {
                 FROM organizations o
                 JOIN organization_members om ON o.id = om.organization_id
                 WHERE om.user_id = ?
-            `, [userId, userId, userId], (err, rows) => {
+                AND NOT EXISTS (
+                    SELECT 1 FROM organization_bans 
+                    WHERE organization_id = o.id AND user_id = ? AND status = 'active'
+                )
+                ORDER BY o.name
+            `, [profileId, profileId, profileId, profileId], (err, rows) => {
                 if (err) reject(err);
                 resolve(rows);
             });
         });
 
-        // Get user's events with stats
+        // Get user's events (excluding banned ones)
         const events = await new Promise((resolve, reject) => {
             db.all(`
                 SELECT e.*, o.name as organization_name,
                        pes.mmr, pes.matches_played, pes.wins, pes.losses,
                        CASE WHEN EXISTS (
-                           SELECT 1 FROM organization_admins oa
-                           JOIN organizations o ON oa.organization_id = o.id
-                           WHERE oa.user_id = ? AND o.id = e.organization_id
+                           SELECT 1 FROM organization_admins 
+                           WHERE organization_id = o.id AND user_id = ?
                        ) THEN 1 ELSE 0 END as is_admin
                 FROM events e
                 JOIN organizations o ON e.organization_id = o.id
                 JOIN event_participants ep ON e.id = ep.event_id
                 LEFT JOIN player_event_stats pes ON e.id = pes.event_id AND pes.user_id = ?
                 WHERE ep.user_id = ?
+                AND NOT EXISTS (
+                    SELECT 1 FROM event_bans 
+                    WHERE event_id = e.id AND user_id = ? AND status = 'active'
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM organization_bans 
+                    WHERE organization_id = o.id AND user_id = ? AND status = 'active'
+                )
                 ORDER BY e.start_date DESC
-            `, [userId, userId, userId], (err, rows) => {
+            `, [profileId, profileId, profileId, profileId, profileId], (err, rows) => {
                 if (err) reject(err);
-                resolve(rows);
+                resolve(rows.map(event => ({
+                    ...event,
+                    mmr: event.mmr || 1500,
+                    matches_played: event.matches_played || 0,
+                    wins: event.wins || 0,
+                    losses: event.losses || 0
+                })));
+            });
+        });
+
+        // Get user's match history
+        const matches = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT m.*, e.name as event_name, o.name as organization_name,
+                       GROUP_CONCAT(u.username) as player_names,
+                       GROUP_CONCAT(u.id) as player_ids,
+                       GROUP_CONCAT(mp.position) as positions,
+                       GROUP_CONCAT(mp.final_score) as final_scores
+                FROM matches m
+                JOIN match_players mp ON m.id = mp.match_id
+                JOIN users u ON mp.user_id = u.id
+                JOIN events e ON m.event_id = e.id
+                JOIN organizations o ON e.organization_id = o.id
+                WHERE mp.user_id = ?
+                AND NOT EXISTS (
+                    SELECT 1 FROM event_bans 
+                    WHERE event_id = e.id AND user_id = ? AND status = 'active'
+                )
+                AND NOT EXISTS (
+                    SELECT 1 FROM organization_bans 
+                    WHERE organization_id = o.id AND user_id = ? AND status = 'active'
+                )
+                GROUP BY m.id
+                ORDER BY m.created_at DESC
+            `, [profileId, profileId, profileId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows.map(match => ({
+                    ...match,
+                    player_names: match.player_names ? match.player_names.split(',') : [],
+                    player_ids: match.player_ids ? match.player_ids.split(',').map(Number) : [],
+                    positions: match.positions ? match.positions.split(',').map(Number) : [],
+                    final_scores: match.final_scores ? match.final_scores.split(',').map(Number) : []
+                })));
             });
         });
 
@@ -223,11 +278,12 @@ router.get('/profile/:id', async (req, res) => {
             user,
             organizations,
             events,
-            isAdmin: req.session.isAdmin,
-            isViewingOwnProfile: userId === currentUserId
+            matches,
+            isViewingOwnProfile,
+            userId
         });
-    } catch (error) {
-        console.error('Error fetching profile:', error);
+    } catch (err) {
+        console.error(err);
         res.status(500).send('Error fetching profile');
     }
 });

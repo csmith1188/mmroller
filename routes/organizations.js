@@ -85,71 +85,90 @@ router.get('/organizations/:id', (req, res) => {
     const orgId = req.params.id;
     const userId = req.session.userId;
     
-    // Get organization details with admin and member status
+    // Get organization details with member status and admin check
     db.get(`
         SELECT o.*, 
+               CASE WHEN om.user_id IS NOT NULL THEN 1 ELSE 0 END as is_member,
                CASE WHEN EXISTS (
                    SELECT 1 FROM organization_admins 
                    WHERE organization_id = o.id AND user_id = ?
-               ) THEN 1 ELSE 0 END as is_admin,
-               CASE WHEN om.user_id IS NOT NULL THEN 1 ELSE 0 END as is_member,
-               CASE WHEN o.created_by = ? THEN 1 ELSE 0 END as is_creator
+               ) THEN 1 ELSE 0 END as is_admin
         FROM organizations o
         LEFT JOIN organization_members om ON o.id = om.organization_id AND om.user_id = ?
         WHERE o.id = ?
-    `, [userId, userId, userId, orgId], (err, organization) => {
-        if (err) {
-            console.error('Error fetching organization details:', err);
-            return res.status(500).send('Database error');
+    `, [userId, userId, orgId], (err, organization) => {
+        if (err || !organization) {
+            console.error(err);
+            return res.status(404).send('Organization not found');
         }
-        
-        // Get organization events
-        db.all(`
-            SELECT events.*,
-                   CASE WHEN EXISTS (
-                       SELECT 1 FROM organization_admins 
-                       WHERE organization_id = o.id AND user_id = ?
-                   ) THEN 1 ELSE 0 END as is_admin
-            FROM events
-            JOIN organizations o ON events.organization_id = o.id
-            WHERE events.organization_id = ?
-            AND (EXISTS (
-                SELECT 1 FROM organization_admins 
-                WHERE organization_id = o.id AND user_id = ?
-            ) OR events.hidden = 0)
-            ORDER BY events.created_at DESC
-        `, [userId, orgId, userId], (err, events) => {
+
+        // Check if user is banned from the organization
+        db.get(`
+            SELECT 1 FROM organization_bans
+            WHERE organization_id = ? AND user_id = ? AND status = 'active'
+        `, [orgId, userId], (err, isBanned) => {
             if (err) {
-                console.error('Error fetching events:', err);
-                return res.status(500).send('Database error');
+                console.error(err);
+                return res.status(500).send('Error checking ban status');
             }
-            
+
+            if (isBanned && !organization.is_admin) {
+                return res.status(403).send('You are banned from this organization');
+            }
+
             // Get organization members
             db.all(`
                 SELECT u.id, u.username,
+                       CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_admins 
                            WHERE organization_id = o.id AND user_id = u.id
                        ) THEN 1 ELSE 0 END as is_admin,
-                       CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator
+                       CASE WHEN ob.status = 'active' THEN 1 ELSE 0 END as is_banned
                 FROM users u
                 JOIN organization_members om ON u.id = om.user_id
-                JOIN organizations o ON om.organization_id = o.id
-                WHERE o.id = ?
-            `, [orgId], (err, members) => {
+                JOIN organizations o ON o.id = om.organization_id
+                LEFT JOIN organization_bans ob ON ob.organization_id = o.id AND ob.user_id = u.id
+                WHERE om.organization_id = ?
+                AND (? = 1 OR NOT EXISTS (
+                    SELECT 1 FROM organization_bans 
+                    WHERE organization_id = o.id AND user_id = u.id AND status = 'active'
+                ))
+                ORDER BY u.username
+            `, [orgId, organization.is_admin], (err, members) => {
                 if (err) {
-                    console.error('Error fetching members:', err);
-                    return res.status(500).send('Database error');
+                    console.error(err);
+                    return res.status(500).send('Error fetching members');
                 }
-                
-                res.render('organization', {
-                    organization,
-                    events,
-                    members,
-                    isAdmin: organization.is_admin,
-                    isMember: organization.is_member,
-                    isCreator: organization.is_creator,
-                    userId: userId
+
+                // Get organization events
+                db.all(`
+                    SELECT e.*,
+                           COUNT(DISTINCT ep.user_id) as participant_count
+                    FROM events e
+                    LEFT JOIN event_participants ep ON e.id = ep.event_id
+                    WHERE e.organization_id = ?
+                    AND (? = 1 OR NOT EXISTS (
+                        SELECT 1 FROM event_bans 
+                        WHERE event_id = e.id AND user_id = ? AND status = 'active'
+                    ))
+                    GROUP BY e.id
+                    ORDER BY e.start_date DESC
+                `, [orgId, organization.is_admin, userId], (err, events) => {
+                    if (err) {
+                        console.error(err);
+                        return res.status(500).send('Error fetching events');
+                    }
+
+                    res.render('organization', {
+                        organization,
+                        members,
+                        events,
+                        applications: [],
+                        userId,
+                        isMember: organization.is_member,
+                        isAdmin: organization.is_admin
+                    });
                 });
             });
         });
@@ -314,44 +333,43 @@ router.post('/organizations/:id/kick/:userId', async (req, res) => {
     }
 });
 
-// Ban a user from an organization
+// Ban member from organization
 router.post('/organizations/:id/ban/:userId', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
-    const { id, userId } = req.params;
-    const currentUserId = req.session.userId;
+    const orgId = req.params.id;
+    const targetUserId = req.params.userId;
+    const adminId = req.session.userId;
 
     try {
-        // Check if current user is an admin of the organization
+        // Check if user is admin of the organization
         const isAdmin = await new Promise((resolve, reject) => {
-            db.get(
-                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
-                [id, currentUserId],
-                (err, row) => {
-                    if (err) reject(err);
-                    resolve(!!row);
-                }
-            );
+            db.get(`
+                SELECT 1 FROM organization_admins
+                WHERE organization_id = ? AND user_id = ?
+            `, [orgId, adminId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
         });
 
         if (!isAdmin) {
-            return res.status(403).send('Unauthorized: You must be an admin to ban members');
+            return res.status(403).send('Unauthorized: Only organization admins can ban members');
         }
 
         // Check if target user is the organization creator
         const isCreator = await new Promise((resolve, reject) => {
-            db.get(
-                'SELECT 1 FROM organizations WHERE id = ? AND created_by = ?',
-                [id, userId],
-                (err, row) => {
-                    if (err) reject(err);
-                    resolve(!!row);
-                }
-            );
+            db.get(`
+                SELECT 1 FROM organizations
+                WHERE id = ? AND created_by = ?
+            `, [orgId, targetUserId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
         });
 
         if (isCreator) {
-            return res.status(403).send('Unauthorized: Cannot ban the organization creator');
+            return res.status(403).send('Cannot ban the organization creator');
         }
 
         // Start transaction
@@ -363,28 +381,41 @@ router.post('/organizations/:id/ban/:userId', async (req, res) => {
         });
 
         try {
-            // First kick the user (which handles events and matches)
+            // Add ban record
             await new Promise((resolve, reject) => {
-                db.run(
-                    'DELETE FROM organization_members WHERE organization_id = ? AND user_id = ?',
-                    [id, userId],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
-                );
+                db.run(`
+                    INSERT OR REPLACE INTO organization_bans (organization_id, user_id, status)
+                    VALUES (?, ?, 'active')
+                `, [orgId, targetUserId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
             });
 
-            // Then add them to the banned list
+            // Remove user from all organization events
             await new Promise((resolve, reject) => {
-                db.run(
-                    'INSERT INTO organization_bans (organization_id, user_id) VALUES (?, ?)',
-                    [id, userId],
-                    (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    }
-                );
+                db.run(`
+                    DELETE FROM event_participants
+                    WHERE user_id = ? AND event_id IN (
+                        SELECT id FROM events WHERE organization_id = ?
+                    )
+                `, [targetUserId, orgId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Ban user from all organization events
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    INSERT OR REPLACE INTO event_bans (event_id, user_id, status)
+                    SELECT id, ?, 'active'
+                    FROM events
+                    WHERE organization_id = ?
+                `, [targetUserId, orgId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
             });
 
             // Commit transaction
@@ -395,17 +426,60 @@ router.post('/organizations/:id/ban/:userId', async (req, res) => {
                 });
             });
 
-            res.redirect(`/organizations/${id}`);
-        } catch (error) {
+            res.redirect(`/organizations/${orgId}`);
+        } catch (err) {
             // Rollback transaction on error
             await new Promise((resolve) => {
                 db.run('ROLLBACK', () => resolve());
             });
-            throw error;
+            throw err;
         }
-    } catch (error) {
-        console.error('Error banning user:', error);
-        res.status(500).send('Error banning user');
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error banning member');
+    }
+});
+
+// Unban member from organization
+router.post('/organizations/:id/unban/:userId', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const orgId = req.params.id;
+    const userId = req.params.userId;
+    const adminId = req.session.userId;
+
+    try {
+        // Check if user is admin
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins
+                WHERE organization_id = ? AND user_id = ?
+            `, [orgId, adminId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can unban members');
+        }
+
+        // Update ban status to inactive
+        await new Promise((resolve, reject) => {
+            db.run(`
+                UPDATE organization_bans
+                SET status = 'inactive'
+                WHERE organization_id = ? AND user_id = ?
+            `, [orgId, userId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.redirect(`/organizations/${orgId}`);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error unbanning member');
     }
 });
 

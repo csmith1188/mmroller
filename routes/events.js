@@ -12,6 +12,7 @@ router.get('/events/:id', (req, res) => {
     db.get(`
         SELECT e.*, 
                o.name as organization_name,
+               o.id as organization_id,
                CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant,
                CASE WHEN EXISTS (
                    SELECT 1 FROM organization_admins 
@@ -26,90 +27,129 @@ router.get('/events/:id', (req, res) => {
             console.error(err);
             return res.status(404).send('Event not found');
         }
-        
-        // Get event participants
-        db.all(`
-            SELECT u.id, u.username,
-                   pes.mmr, pes.matches_played, pes.wins, pes.losses
-            FROM users u
-            JOIN event_participants ep ON u.id = ep.user_id
-            LEFT JOIN player_event_stats pes ON pes.event_id = ep.event_id AND pes.user_id = u.id
-            WHERE ep.event_id = ?
-            ORDER BY pes.mmr DESC NULLS LAST
-        `, [eventId], (err, participants) => {
+
+        // Check if user is banned from the organization
+        db.get(`
+            SELECT 1 FROM organization_bans
+            WHERE organization_id = ? AND user_id = ? AND status = 'active'
+        `, [event.organization_id, userId], (err, isOrgBanned) => {
             if (err) {
                 console.error(err);
-                return res.status(500).send('Error fetching participants');
+                return res.status(500).send('Error checking organization ban status');
             }
-            
-            // Format stats for display
-            const participantsWithStats = participants.map(participant => ({
-                ...participant,
-                mmr: participant.mmr || 1500,
-                matches_played: participant.matches_played || 0,
-                wins: participant.wins || 0,
-                losses: participant.losses || 0
-            }));
-            
-            // Get event matches with player information
-            db.all(`
-                SELECT m.*, 
-                       GROUP_CONCAT(u.username) as player_names,
-                       GROUP_CONCAT(u.id) as player_ids,
-                       GROUP_CONCAT(mp.position) as positions,
-                       GROUP_CONCAT(mp.final_score) as final_scores
-                FROM matches m
-                JOIN match_players mp ON m.id = mp.match_id
-                JOIN users u ON mp.user_id = u.id
-                WHERE m.event_id = ?
-                GROUP BY m.id
-                ORDER BY m.created_at DESC
-            `, [eventId], (err, matches) => {
+
+            if (isOrgBanned && !event.is_admin) {
+                return res.status(403).send('You are banned from this organization');
+            }
+
+            // Check if user is banned from the event
+            db.get(`
+                SELECT 1 FROM event_bans
+                WHERE event_id = ? AND user_id = ? AND status = 'active'
+            `, [eventId, userId], (err, isEventBanned) => {
                 if (err) {
                     console.error(err);
-                    return res.status(500).send('Error fetching matches');
+                    return res.status(500).send('Error checking event ban status');
                 }
-                
-                // Process matches to split concatenated fields
-                const processedMatches = matches.map(match => ({
-                    ...match,
-                    player_names: match.player_names ? match.player_names.split(',') : [],
-                    player_ids: match.player_ids ? match.player_ids.split(',').map(Number) : [],
-                    positions: match.positions ? match.positions.split(',').map(Number) : [],
-                    final_scores: match.final_scores ? match.final_scores.split(',').map(Number) : []
-                }));
-                
-                // Get event applications if user is admin
-                if (event.is_admin) {
+
+                if (isEventBanned && !event.is_admin) {
+                    return res.status(403).send('You are banned from this event');
+                }
+            
+                // Get event participants
+                db.all(`
+                    SELECT u.id, u.username,
+                           pes.mmr, pes.matches_played, pes.wins, pes.losses,
+                           CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
+                           CASE WHEN eb.status = 'active' THEN 1 ELSE 0 END as is_banned
+                    FROM users u
+                    JOIN event_participants ep ON u.id = ep.user_id
+                    LEFT JOIN player_event_stats pes ON pes.event_id = ep.event_id AND pes.user_id = u.id
+                    JOIN events e ON e.id = ep.event_id
+                    JOIN organizations o ON o.id = e.organization_id
+                    LEFT JOIN event_bans eb ON eb.event_id = e.id AND eb.user_id = u.id
+                    WHERE ep.event_id = ?
+                    AND (? = 1 OR NOT EXISTS (
+                        SELECT 1 FROM event_bans 
+                        WHERE event_id = e.id AND user_id = u.id AND status = 'active'
+                    ))
+                    ORDER BY pes.mmr DESC NULLS LAST
+                `, [eventId, event.is_admin], (err, participants) => {
+                    if (err) {
+                        console.error(err);
+                        return res.status(500).send('Error fetching participants');
+                    }
+                    
+                    // Format stats for display
+                    const participantsWithStats = participants.map(participant => ({
+                        ...participant,
+                        mmr: participant.mmr || 1500,
+                        matches_played: participant.matches_played || 0,
+                        wins: participant.wins || 0,
+                        losses: participant.losses || 0
+                    }));
+                    
+                    // Get event matches with player information
                     db.all(`
-                        SELECT ea.*, u.username
-                        FROM event_applications ea
-                        JOIN users u ON ea.user_id = u.id
-                        WHERE ea.event_id = ?
-                        ORDER BY ea.applied_at DESC
-                    `, [eventId], (err, applications) => {
+                        SELECT m.*, 
+                               GROUP_CONCAT(u.username) as player_names,
+                               GROUP_CONCAT(u.id) as player_ids,
+                               GROUP_CONCAT(mp.position) as positions,
+                               GROUP_CONCAT(mp.final_score) as final_scores
+                        FROM matches m
+                        JOIN match_players mp ON m.id = mp.match_id
+                        JOIN users u ON mp.user_id = u.id
+                        WHERE m.event_id = ?
+                        GROUP BY m.id
+                        ORDER BY m.created_at DESC
+                    `, [eventId], (err, matches) => {
                         if (err) {
                             console.error(err);
-                            return res.status(500).send('Error fetching applications');
+                            return res.status(500).send('Error fetching matches');
                         }
                         
-                        res.render('event', {
-                            event,
-                            participants: participantsWithStats,
-                            matches: processedMatches,
-                            applications,
-                            userId
-                        });
+                        // Process matches to split concatenated fields
+                        const processedMatches = matches.map(match => ({
+                            ...match,
+                            player_names: match.player_names ? match.player_names.split(',') : [],
+                            player_ids: match.player_ids ? match.player_ids.split(',').map(Number) : [],
+                            positions: match.positions ? match.positions.split(',').map(Number) : [],
+                            final_scores: match.final_scores ? match.final_scores.split(',').map(Number) : []
+                        }));
+                        
+                        // Get event applications if user is admin
+                        if (event.is_admin) {
+                            db.all(`
+                                SELECT ea.*, u.username
+                                FROM event_applications ea
+                                JOIN users u ON ea.user_id = u.id
+                                WHERE ea.event_id = ?
+                                ORDER BY ea.applied_at DESC
+                            `, [eventId], (err, applications) => {
+                                if (err) {
+                                    console.error(err);
+                                    return res.status(500).send('Error fetching applications');
+                                }
+                                
+                                res.render('event', {
+                                    event,
+                                    participants: participantsWithStats,
+                                    matches: processedMatches,
+                                    applications,
+                                    userId
+                                });
+                            });
+                        } else {
+                            res.render('event', {
+                                event,
+                                participants: participantsWithStats,
+                                matches: processedMatches,
+                                applications: [],
+                                userId
+                            });
+                        }
                     });
-                } else {
-                    res.render('event', {
-                        event,
-                        participants: participantsWithStats,
-                        matches: processedMatches,
-                        applications: [],
-                        userId
-                    });
-                }
+                });
             });
         });
     });
@@ -641,71 +681,65 @@ router.post('/events/:id/ban/:userId', async (req, res) => {
             return res.status(403).send('Cannot ban the organization creator');
         }
 
-        // Start transaction
+        // Add ban record
         await new Promise((resolve, reject) => {
-            db.run('BEGIN TRANSACTION', (err) => {
+            db.run(`
+                INSERT OR REPLACE INTO event_bans (event_id, user_id, status)
+                VALUES (?, ?, 'active')
+            `, [eventId, userId], (err) => {
                 if (err) reject(err);
                 resolve();
             });
         });
 
-        try {
-            // Mark participant's matches as forfeit
-            await new Promise((resolve, reject) => {
-                db.run(`
-                    UPDATE matches 
-                    SET status = 'forfeit'
-                    WHERE event_id = ? AND id IN (
-                        SELECT match_id FROM match_players 
-                        WHERE user_id = ?
-                    )
-                `, [eventId, userId], (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
-
-            // Remove participant from event
-            await new Promise((resolve, reject) => {
-                db.run(`
-                    DELETE FROM event_participants 
-                    WHERE event_id = ? AND user_id = ?
-                `, [eventId, userId], (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
-
-            // Add to event bans
-            await new Promise((resolve, reject) => {
-                db.run(`
-                    INSERT OR IGNORE INTO event_bans (event_id, user_id, banned_at)
-                    VALUES (?, ?, datetime('now'))
-                `, [eventId, userId], (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
-
-            // Commit transaction
-            await new Promise((resolve, reject) => {
-                db.run('COMMIT', (err) => {
-                    if (err) reject(err);
-                    resolve();
-                });
-            });
-
-            res.redirect(`/events/${eventId}`);
-        } catch (err) {
-            // Rollback transaction on error
-            await new Promise((resolve) => {
-                db.run('ROLLBACK', () => resolve());
-            });
-            throw err;
-        }
+        res.redirect(`/events/${eventId}`);
     } catch (err) {
         console.error(err);
         res.status(500).send('Error banning participant');
+    }
+});
+
+// Unban participant from event
+router.post('/events/:id/unban/:userId', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.params.userId;
+    const adminId = req.session.userId;
+
+    try {
+        // Check if user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, adminId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can unban participants');
+        }
+
+        // Update ban status to inactive
+        await new Promise((resolve, reject) => {
+            db.run(`
+                UPDATE event_bans
+                SET status = 'inactive'
+                WHERE event_id = ? AND user_id = ?
+            `, [eventId, userId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.redirect(`/events/${eventId}`);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error unbanning participant');
     }
 });
 
