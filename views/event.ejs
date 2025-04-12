@@ -24,6 +24,9 @@
                                     <th class="text-end">MMR</th>
                                     <th class="text-end">Matches</th>
                                     <th class="text-end">W/L</th>
+                                    <% if (event.is_admin) { %>
+                                        <th class="text-end">Actions</th>
+                                    <% } %>
                                 </tr>
                             </thead>
                             <tbody>
@@ -43,6 +46,73 @@
                                             /
                                             <span class="text-danger"><%= participant.losses %></span>
                                         </td>
+                                        <% if (event.is_admin) { %>
+                                            <td class="text-end">
+                                                <% if (!participant.is_creator) { %>
+                                                    <div class="dropdown">
+                                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                            Actions
+                                                        </button>
+                                                        <ul class="dropdown-menu dropdown-menu-end">
+                                                            <li>
+                                                                <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#kickModal<%= participant.id %>">
+                                                                    Kick
+                                                                </button>
+                                                            </li>
+                                                            <li>
+                                                                <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#banModal<%= participant.id %>">
+                                                                    Ban
+                                                                </button>
+                                                            </li>
+                                                        </ul>
+                                                    </div>
+
+                                                    <!-- Kick Modal -->
+                                                    <div class="modal fade" id="kickModal<%= participant.id %>" tabindex="-1">
+                                                        <div class="modal-dialog">
+                                                            <div class="modal-content">
+                                                                <div class="modal-header">
+                                                                    <h5 class="modal-title">Kick Participant</h5>
+                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                                </div>
+                                                                <div class="modal-body">
+                                                                    <p>Are you sure you want to kick <strong><%= participant.username %></strong> from this event?</p>
+                                                                    <p class="text-danger">This will remove them from the event and mark their matches as forfeit.</p>
+                                                                </div>
+                                                                <div class="modal-footer">
+                                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                    <form action="/events/<%= event.id %>/kick/<%= participant.id %>" method="POST">
+                                                                        <button type="submit" class="btn btn-danger">Kick</button>
+                                                                    </form>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <!-- Ban Modal -->
+                                                    <div class="modal fade" id="banModal<%= participant.id %>" tabindex="-1">
+                                                        <div class="modal-dialog">
+                                                            <div class="modal-content">
+                                                                <div class="modal-header">
+                                                                    <h5 class="modal-title">Ban Participant</h5>
+                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                                </div>
+                                                                <div class="modal-body">
+                                                                    <p>Are you sure you want to ban <strong><%= participant.username %></strong> from this event?</p>
+                                                                    <p class="text-danger">This will kick them from the event and prevent them from rejoining.</p>
+                                                                </div>
+                                                                <div class="modal-footer">
+                                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                    <form action="/events/<%= event.id %>/ban/<%= participant.id %>" method="POST">
+                                                                        <button type="submit" class="btn btn-danger">Ban</button>
+                                                                    </form>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                <% } %>
+                                            </td>
+                                        <% } %>
                                     </tr>
                                 <% }); %>
                             </tbody>
@@ -117,19 +187,32 @@
                     <h5 class="mb-0">Event Details</h5>
                 </div>
                 <div class="card-body">
-                    <% if (event.start_date) { %>
-                        <p class="card-text">
-                            Start Date: <%= new Date(event.start_date).toLocaleDateString() %>
-                        </p>
+                    <% if (event.is_admin) { %>
+                        <form action="/events/<%= event.id %>/update-dates" method="POST" class="mb-3">
+                            <div class="mb-3">
+                                <label for="start_date" class="form-label">Start Date</label>
+                                <input type="datetime-local" class="form-control" id="start_date" name="start_date" 
+                                    value="<%= event.start_date ? new Date(event.start_date).toISOString().slice(0, 16) : '' %>">
+                            </div>
+                            <div class="mb-3">
+                                <label for="end_date" class="form-label">End Date</label>
+                                <input type="datetime-local" class="form-control" id="end_date" name="end_date"
+                                    value="<%= event.end_date ? new Date(event.end_date).toISOString().slice(0, 16) : '' %>">
+                            </div>
+                            <button type="submit" class="btn btn-primary">Update Dates</button>
+                        </form>
+                    <% } else { %>
+                        <% if (event.start_date) { %>
+                            <p class="card-text">
+                                Start Date: <%= new Date(event.start_date).toLocaleDateString() %>
+                            </p>
+                        <% } %>
+                        <% if (event.end_date) { %>
+                            <p class="card-text">
+                                End Date: <%= new Date(event.end_date).toLocaleDateString() %>
+                            </p>
+                        <% } %>
                     <% } %>
-                    <% if (event.end_date) { %>
-                        <p class="card-text">
-                            End Date: <%= new Date(event.end_date).toLocaleDateString() %>
-                        </p>
-                    <% } %>
-                    <p class="card-text">
-                        Created: <%= new Date(event.created_at).toLocaleDateString() %>
-                    </p>
                     
                     <% if (event.is_admin) { %>
                         <form action="/events/<%= event.id %>/toggle-visibility" method="POST" class="mb-3">

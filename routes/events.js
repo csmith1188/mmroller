@@ -13,7 +13,10 @@ router.get('/events/:id', (req, res) => {
         SELECT e.*, 
                o.name as organization_name,
                CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant,
-               CASE WHEN o.admin_id = ? THEN 1 ELSE 0 END as is_admin
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM organization_admins 
+                   WHERE organization_id = o.id AND user_id = ?
+               ) THEN 1 ELSE 0 END as is_admin
         FROM events e
         JOIN organizations o ON e.organization_id = o.id
         LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
@@ -163,78 +166,111 @@ router.post('/events/:id/apply', (req, res) => {
     });
 });
 
-// Accept event application route
-router.post('/events/:id/accept/:userId', (req, res) => {
+// Accept event application
+router.post('/events/:id/accept/:userId', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
     const userId = req.params.userId;
-    const adminId = req.session.userId;
-    
-    // Verify user is admin of the organization
-    db.get(`
-        SELECT 1 FROM events e
-        JOIN organizations o ON e.organization_id = o.id
-        WHERE e.id = ? AND o.admin_id = ?
-    `, [eventId, adminId], (err, isAdmin) => {
-        if (err || !isAdmin) {
-            return res.status(403).send('Unauthorized');
-        }
-        
-        // Start transaction
-        db.run('BEGIN TRANSACTION', (err) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).send('Error starting transaction');
-            }
-            
-            // Add user as participant
-            db.run(`
-                INSERT INTO event_participants (event_id, user_id)
-                VALUES (?, ?)
-            `, [eventId, userId], (err) => {
-                if (err) {
-                    db.run('ROLLBACK');
-                    console.error(err);
-                    return res.status(500).send('Error adding participant');
-                }
-                
-                // Initialize player stats
-                db.run(`
-                    INSERT INTO player_event_stats (event_id, user_id)
-                    VALUES (?, ?)
-                `, [eventId, userId], (err) => {
-                    if (err) {
-                        db.run('ROLLBACK');
-                        console.error(err);
-                        return res.status(500).send('Error initializing player stats');
-                    }
-                
-                    // Remove application
-                    db.run(`
-                        DELETE FROM event_applications
-                        WHERE event_id = ? AND user_id = ?
-                    `, [eventId, userId], (err) => {
-                        if (err) {
-                            db.run('ROLLBACK');
-                            console.error(err);
-                            return res.status(500).send('Error removing application');
-                        }
-                        
-                        // Commit transaction
-                        db.run('COMMIT', (err) => {
-                            if (err) {
-                                console.error(err);
-                                return res.status(500).send('Error committing transaction');
-                            }
-                            
-                            res.redirect(`/events/${eventId}`);
-                        });
-                    });
-                });
+    const currentUserId = req.session.userId;
+
+    try {
+        // Verify user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM events e
+                JOIN organizations o ON e.organization_id = o.id
+                JOIN organization_admins oa ON o.id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, currentUserId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
             });
         });
-    });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized');
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            // Add user as participant
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO event_participants (event_id, user_id) VALUES (?, ?)',
+                    [eventId, userId],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            // Check if player stats already exist
+            const statsExist = await new Promise((resolve, reject) => {
+                db.get(
+                    'SELECT 1 FROM player_event_stats WHERE event_id = ? AND user_id = ?',
+                    [eventId, userId],
+                    (err, row) => {
+                        if (err) reject(err);
+                        resolve(!!row);
+                    }
+                );
+            });
+
+            // Initialize player stats if they don't exist
+            if (!statsExist) {
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        'INSERT INTO player_event_stats (event_id, user_id, mmr) VALUES (?, ?, ?)',
+                        [eventId, userId, 1500],
+                        (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        }
+                    );
+                });
+            }
+
+            // Remove application
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'DELETE FROM event_applications WHERE event_id = ? AND user_id = ?',
+                    [eventId, userId],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/events/${eventId}`);
+        } catch (error) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error accepting application:', error);
+        res.status(500).send('Error accepting application');
+    }
 });
 
 // Reject event application
@@ -276,65 +312,100 @@ router.get('/organizations/:id/events/new', (req, res) => {
     res.render('new-event', { organizationId: req.params.id });
 });
 
-router.post('/organizations/:id/events', (req, res) => {
+// Create a new event
+router.post('/organizations/:id/events', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const orgId = req.params.id;
-    const { name, description, start_date, end_date } = req.body;
+    const { name, description, start_date, end_date, hidden, lowest_score_wins } = req.body;
     const userId = req.session.userId;
-    
-    // Verify user is admin of organization
-    db.get(`
-        SELECT 1 FROM organizations 
-        WHERE id = ? AND admin_id = ?
-    `, [orgId, userId], (err, result) => {
-        if (err || !result) {
+
+    if (!userId) {
+        return res.status(401).send('You must be logged in to create an event');
+    }
+
+    try {
+        // Check if user is an admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
+                [orgId, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (!isAdmin) {
             return res.status(403).send('Unauthorized: Only organization admins can create events');
         }
-        
+
         // Start transaction
-        db.run('BEGIN TRANSACTION', (err) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).send('Error starting transaction');
-            }
-            
-            // Create event
-            db.run(`
-                INSERT INTO events (name, description, organization_id, start_date, end_date)
-                VALUES (?, ?, ?, ?, ?)
-            `, [name, description, orgId, start_date, end_date], function(err) {
-                if (err) {
-                    db.run('ROLLBACK');
-                    return res.status(500).send('Error creating event');
-                }
-                
-                const eventId = this.lastID;
-                
-                // Add admin as participant
-                db.run(`
-                    INSERT INTO event_participants (event_id, user_id)
-                    VALUES (?, ?)
-                `, [eventId, userId], (err) => {
-                    if (err) {
-                        db.run('ROLLBACK');
-                        console.error(err);
-                        return res.status(500).send('Error adding admin as participant');
-                    }
-                    
-                    // Commit transaction
-                    db.run('COMMIT', (err) => {
-                        if (err) {
-                            console.error(err);
-                            return res.status(500).send('Error committing transaction');
-                        }
-                        
-                        res.redirect(`/organizations/${orgId}`);
-                    });
-                });
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
             });
         });
-    });
+
+        try {
+            // Create event
+            const eventId = await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO events (name, description, organization_id, start_date, end_date, hidden, lowest_score_wins) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                    [name, description, orgId, start_date, end_date, hidden ? 1 : 0, lowest_score_wins ? 1 : 0],
+                    function(err) {
+                        if (err) reject(err);
+                        resolve(this.lastID);
+                    }
+                );
+            });
+
+            // Add admin as participant
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO event_participants (event_id, user_id) VALUES (?, ?)',
+                    [eventId, userId],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            // Initialize admin's stats
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO player_event_stats (event_id, user_id, mmr) VALUES (?, ?, ?)',
+                    [eventId, userId, 1500],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/events/${eventId}`);
+        } catch (error) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error creating event:', error);
+        res.status(500).send('Error creating event');
+    }
 });
 
 // Search players for event
@@ -429,6 +500,213 @@ router.post('/events/:id/toggle-scoring', (req, res) => {
             res.redirect(`/events/${eventId}`);
         });
     });
+});
+
+// Kick participant from event
+router.post('/events/:id/kick/:userId', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.params.userId;
+    const adminId = req.session.userId;
+
+    try {
+        // Check if user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, adminId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can kick participants');
+        }
+
+        // Check if target user is the organization creator
+        const isCreator = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organizations o
+                JOIN events e ON e.organization_id = o.id
+                WHERE e.id = ? AND o.created_by = ?
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (isCreator) {
+            return res.status(403).send('Cannot kick the organization creator');
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            // Mark participant's matches as forfeit
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    UPDATE matches 
+                    SET status = 'forfeit'
+                    WHERE event_id = ? AND id IN (
+                        SELECT match_id FROM match_players 
+                        WHERE user_id = ?
+                    )
+                `, [eventId, userId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Remove participant from event
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    DELETE FROM event_participants 
+                    WHERE event_id = ? AND user_id = ?
+                `, [eventId, userId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/events/${eventId}`);
+        } catch (err) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw err;
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error kicking participant');
+    }
+});
+
+// Ban participant from event
+router.post('/events/:id/ban/:userId', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.params.userId;
+    const adminId = req.session.userId;
+
+    try {
+        // Check if user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, adminId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can ban participants');
+        }
+
+        // Check if target user is the organization creator
+        const isCreator = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organizations o
+                JOIN events e ON e.organization_id = o.id
+                WHERE e.id = ? AND o.created_by = ?
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (isCreator) {
+            return res.status(403).send('Cannot ban the organization creator');
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            // Mark participant's matches as forfeit
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    UPDATE matches 
+                    SET status = 'forfeit'
+                    WHERE event_id = ? AND id IN (
+                        SELECT match_id FROM match_players 
+                        WHERE user_id = ?
+                    )
+                `, [eventId, userId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Remove participant from event
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    DELETE FROM event_participants 
+                    WHERE event_id = ? AND user_id = ?
+                `, [eventId, userId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Add to event bans
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    INSERT OR IGNORE INTO event_bans (event_id, user_id, banned_at)
+                    VALUES (?, ?, datetime('now'))
+                `, [eventId, userId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/events/${eventId}`);
+        } catch (err) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw err;
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error banning participant');
+    }
 });
 
 module.exports = router; 

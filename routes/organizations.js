@@ -17,32 +17,65 @@ router.post('/organizations', (req, res) => {
         return res.status(401).send('You must be logged in to create an organization');
     }
     
-    db.run(
-        'INSERT INTO organizations (name, description, admin_id, created_by) VALUES (?, ?, ?, ?)',
-        [name, description, adminId, adminId],
-        function(err) {
-            if (err) {
-                console.error('Error creating organization:', err);
-                return res.status(500).send('Error creating organization');
-            }
-            
-            const orgId = this.lastID;
-            
-            // Add admin as member
-            db.run(
-                'INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)',
-                [orgId, adminId],
-                (err) => {
-                    if (err) {
-                        console.error('Error adding admin to organization:', err);
-                        return res.status(500).send('Error adding admin to organization');
-                    }
-                    
-                    res.redirect('/profile');
-                }
-            );
+    // Start transaction
+    db.run('BEGIN TRANSACTION', (err) => {
+        if (err) {
+            console.error('Error starting transaction:', err);
+            return res.status(500).send('Error creating organization');
         }
-    );
+        
+        // Create organization
+        db.run(
+            'INSERT INTO organizations (name, description, created_by) VALUES (?, ?, ?)',
+            [name, description, adminId],
+            function(err) {
+                if (err) {
+                    console.error('Error creating organization:', err);
+                    db.run('ROLLBACK');
+                    return res.status(500).send('Error creating organization');
+                }
+                
+                const orgId = this.lastID;
+                
+                // Add creator as member
+                db.run(
+                    'INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)',
+                    [orgId, adminId],
+                    (err) => {
+                        if (err) {
+                            console.error('Error adding creator to organization:', err);
+                            db.run('ROLLBACK');
+                            return res.status(500).send('Error adding creator to organization');
+                        }
+                        
+                        // Add creator as admin
+                        db.run(
+                            'INSERT INTO organization_admins (organization_id, user_id) VALUES (?, ?)',
+                            [orgId, adminId],
+                            (err) => {
+                                if (err) {
+                                    console.error('Error adding creator as admin:', err);
+                                    db.run('ROLLBACK');
+                                    return res.status(500).send('Error adding creator as admin');
+                                }
+                                
+                                // Commit transaction
+                                db.run('COMMIT', (err) => {
+                                    if (err) {
+                                        console.error('Error committing transaction:', err);
+                                        db.run('ROLLBACK');
+                                        return res.status(500).send('Error creating organization');
+                                    }
+                                    
+                                    res.redirect('/profile');
+                                });
+                            }
+                        );
+                    }
+                );
+            }
+        );
+    });
 });
 
 // Organization details route
@@ -55,7 +88,10 @@ router.get('/organizations/:id', (req, res) => {
     // Get organization details with admin and member status
     db.get(`
         SELECT o.*, 
-               CASE WHEN o.admin_id = ? THEN 1 ELSE 0 END as is_admin,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM organization_admins 
+                   WHERE organization_id = o.id AND user_id = ?
+               ) THEN 1 ELSE 0 END as is_admin,
                CASE WHEN om.user_id IS NOT NULL THEN 1 ELSE 0 END as is_member,
                CASE WHEN o.created_by = ? THEN 1 ELSE 0 END as is_creator
         FROM organizations o
@@ -70,11 +106,17 @@ router.get('/organizations/:id', (req, res) => {
         // Get organization events
         db.all(`
             SELECT events.*,
-                   CASE WHEN o.admin_id = ? THEN 1 ELSE 0 END as is_admin
+                   CASE WHEN EXISTS (
+                       SELECT 1 FROM organization_admins 
+                       WHERE organization_id = o.id AND user_id = ?
+                   ) THEN 1 ELSE 0 END as is_admin
             FROM events
             JOIN organizations o ON events.organization_id = o.id
             WHERE events.organization_id = ?
-            AND (o.admin_id = ? OR events.hidden = 0)
+            AND (EXISTS (
+                SELECT 1 FROM organization_admins 
+                WHERE organization_id = o.id AND user_id = ?
+            ) OR events.hidden = 0)
             ORDER BY events.created_at DESC
         `, [userId, orgId, userId], (err, events) => {
             if (err) {
@@ -85,7 +127,10 @@ router.get('/organizations/:id', (req, res) => {
             // Get organization members
             db.all(`
                 SELECT u.id, u.username,
-                       CASE WHEN o.admin_id = u.id THEN 1 ELSE 0 END as is_admin,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins 
+                           WHERE organization_id = o.id AND user_id = u.id
+                       ) THEN 1 ELSE 0 END as is_admin,
                        CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator
                 FROM users u
                 JOIN organization_members om ON u.id = om.user_id
@@ -159,7 +204,7 @@ router.post('/organizations/:id/kick/:userId', async (req, res) => {
         // Check if current user is an admin of the organization
         const isAdmin = await new Promise((resolve, reject) => {
             db.get(
-                'SELECT 1 FROM organizations WHERE id = ? AND admin_id = ?',
+                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
                 [id, currentUserId],
                 (err, row) => {
                     if (err) reject(err);
@@ -170,6 +215,22 @@ router.post('/organizations/:id/kick/:userId', async (req, res) => {
 
         if (!isAdmin) {
             return res.status(403).send('Unauthorized: You must be an admin to kick members');
+        }
+
+        // Check if target user is the organization creator
+        const isCreator = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organizations WHERE id = ? AND created_by = ?',
+                [id, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (isCreator) {
+            return res.status(403).send('Unauthorized: Cannot kick the organization creator');
         }
 
         // Start transaction
@@ -213,10 +274,17 @@ router.post('/organizations/:id/kick/:userId', async (req, res) => {
                 db.run(
                     `UPDATE matches 
                      SET status = 'forfeit'
-                     WHERE event_id IN (
-                         SELECT id FROM events WHERE organization_id = ?
-                     ) AND (player1_id = ? OR player2_id = ?)`,
-                    [id, userId, userId],
+                     WHERE id IN (
+                         SELECT match_id FROM match_players 
+                         WHERE user_id = ? AND match_id IN (
+                             SELECT id FROM matches 
+                             WHERE event_id IN (
+                                 SELECT id FROM events 
+                                 WHERE organization_id = ?
+                             )
+                         )
+                     )`,
+                    [userId, id],
                     (err) => {
                         if (err) reject(err);
                         resolve();
@@ -257,7 +325,7 @@ router.post('/organizations/:id/ban/:userId', async (req, res) => {
         // Check if current user is an admin of the organization
         const isAdmin = await new Promise((resolve, reject) => {
             db.get(
-                'SELECT 1 FROM organizations WHERE id = ? AND admin_id = ?',
+                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
                 [id, currentUserId],
                 (err, row) => {
                     if (err) reject(err);
@@ -268,6 +336,22 @@ router.post('/organizations/:id/ban/:userId', async (req, res) => {
 
         if (!isAdmin) {
             return res.status(403).send('Unauthorized: You must be an admin to ban members');
+        }
+
+        // Check if target user is the organization creator
+        const isCreator = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organizations WHERE id = ? AND created_by = ?',
+                [id, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (isCreator) {
+            return res.status(403).send('Unauthorized: Cannot ban the organization creator');
         }
 
         // Start transaction
@@ -373,7 +457,7 @@ router.post('/organizations/:id/promote/:userId', async (req, res) => {
             // Add the user as an admin
             await new Promise((resolve, reject) => {
                 db.run(
-                    'INSERT OR IGNORE INTO organization_admins (organization_id, user_id) VALUES (?, ?)',
+                    'INSERT INTO organization_admins (organization_id, user_id) VALUES (?, ?)',
                     [id, userId],
                     (err) => {
                         if (err) reject(err);
@@ -447,8 +531,8 @@ router.post('/organizations/:id/remove-admin/:userId', async (req, res) => {
         // Remove admin status
         await new Promise((resolve, reject) => {
             db.run(
-                'UPDATE organizations SET admin_id = ? WHERE id = ? AND admin_id = ?',
-                [currentUserId, id, userId],
+                'DELETE FROM organization_admins WHERE organization_id = ? AND user_id = ?',
+                [id, userId],
                 (err) => {
                     if (err) reject(err);
                     resolve();
@@ -477,7 +561,10 @@ router.get('/organizations', (req, res) => {
     db.all(`
         SELECT o.*, 
                COUNT(om2.user_id) as member_count,
-               CASE WHEN o.admin_id = ? THEN 1 ELSE 0 END as is_admin,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM organization_admins 
+                   WHERE organization_id = o.id AND user_id = ?
+               ) THEN 1 ELSE 0 END as is_admin,
                CASE WHEN o.created_by = ? THEN 1 ELSE 0 END as is_creator,
                CASE WHEN EXISTS (
                    SELECT 1 FROM organization_members 
@@ -517,7 +604,10 @@ router.get('/organizations', (req, res) => {
             db.all(`
                 SELECT o.*, 
                        COUNT(om.user_id) as member_count,
-                       CASE WHEN o.admin_id = ? THEN 1 ELSE 0 END as is_admin,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins 
+                           WHERE organization_id = o.id AND user_id = ?
+                       ) THEN 1 ELSE 0 END as is_admin,
                        CASE WHEN o.created_by = ? THEN 1 ELSE 0 END as is_creator,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_members 
@@ -571,6 +661,50 @@ router.get('/organizations', (req, res) => {
             });
         });
     });
+});
+
+// Update organization
+router.post('/organizations/:id/update', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const { id } = req.params;
+    const { name, description } = req.body;
+    const userId = req.session.userId;
+
+    try {
+        // Check if user is an admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
+                [id, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: You must be an admin to update the organization');
+        }
+
+        // Update organization
+        await new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE organizations SET name = ?, description = ? WHERE id = ?',
+                [name, description, id],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.redirect(`/organizations/${id}`);
+    } catch (error) {
+        console.error('Error updating organization:', error);
+        res.status(500).send('Error updating organization');
+    }
 });
 
 module.exports = router; 

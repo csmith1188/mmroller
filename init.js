@@ -56,9 +56,9 @@ db.serialize(() => {
                     
                     // Create test organization
                     db.run(`
-                        INSERT OR IGNORE INTO organizations (name, description, admin_id, created_by)
-                        VALUES (?, ?, ?, ?)
-                    `, ['Test Organization', 'A test organization', adminId, adminId], function(err) {
+                        INSERT OR IGNORE INTO organizations (name, description, created_by)
+                        VALUES (?, ?, ?)
+                    `, ['Test Organization', 'A test organization', adminId], function(err) {
                         if (err) {
                             console.error('Error creating test organization:', err);
                             return;
@@ -76,61 +76,72 @@ db.serialize(() => {
                                 return;
                             }
 
-                            // Create test event
+                            // Add admin as admin
                             db.run(`
-                                INSERT OR IGNORE INTO events (name, description, organization_id, start_date, end_date, hidden)
-                                VALUES (?, ?, ?, datetime('now'), datetime('now', '+1 day'), 0)
-                            `, ['Test Event', 'A test event', orgId], function(err) {
+                                INSERT OR IGNORE INTO organization_admins (organization_id, user_id)
+                                VALUES (?, ?)
+                            `, [orgId, adminId], function(err) {
                                 if (err) {
-                                    console.error('Error creating test event:', err);
+                                    console.error('Error adding admin as admin:', err);
                                     return;
                                 }
 
-                                const eventId = this.lastID;
-
-                                // Add admin as participant
+                                // Create test event
                                 db.run(`
-                                    INSERT OR IGNORE INTO event_participants (event_id, user_id)
-                                    VALUES (?, ?)
-                                `, [eventId, adminId], function(err) {
+                                    INSERT OR IGNORE INTO events (name, description, organization_id, start_date, end_date, hidden)
+                                    VALUES (?, ?, ?, datetime('now'), datetime('now', '+1 day'), 0)
+                                `, ['Test Event', 'A test event', orgId], function(err) {
                                     if (err) {
-                                        console.error('Error adding admin to event:', err);
+                                        console.error('Error creating test event:', err);
                                         return;
                                     }
 
-                                    // Create test match
+                                    const eventId = this.lastID;
+
+                                    // Add admin as participant
                                     db.run(`
-                                        INSERT OR IGNORE INTO matches (event_id, status)
+                                        INSERT OR IGNORE INTO event_participants (event_id, user_id)
                                         VALUES (?, ?)
-                                    `, [eventId, 'pending'], function(err) {
+                                    `, [eventId, adminId], function(err) {
                                         if (err) {
-                                            console.error('Error creating test match:', err);
+                                            console.error('Error adding admin to event:', err);
                                             return;
                                         }
 
-                                        const matchId = this.lastID;
-
-                                        // Add admin as player
+                                        // Create test match
                                         db.run(`
-                                            INSERT OR IGNORE INTO match_players (match_id, user_id, position)
-                                            VALUES (?, ?, ?)
-                                        `, [matchId, adminId, 1], function(err) {
+                                            INSERT OR IGNORE INTO matches (event_id, status)
+                                            VALUES (?, ?)
+                                        `, [eventId, 'pending'], function(err) {
                                             if (err) {
-                                                console.error('Error adding admin to match:', err);
+                                                console.error('Error creating test match:', err);
                                                 return;
                                             }
 
-                                            // Create test match submission
+                                            const matchId = this.lastID;
+
+                                            // Add admin as player
                                             db.run(`
-                                                INSERT OR IGNORE INTO match_submissions (match_id, user_id, scores)
+                                                INSERT OR IGNORE INTO match_players (match_id, user_id, position)
                                                 VALUES (?, ?, ?)
-                                            `, [matchId, adminId, JSON.stringify({ [adminId]: 100 })], function(err) {
+                                            `, [matchId, adminId, 1], function(err) {
                                                 if (err) {
-                                                    console.error('Error creating test submission:', err);
+                                                    console.error('Error adding admin to match:', err);
                                                     return;
                                                 }
-                                                
-                                                console.log('Test data created successfully');
+
+                                                // Create test match submission
+                                                db.run(`
+                                                    INSERT OR IGNORE INTO match_submissions (match_id, user_id, scores)
+                                                    VALUES (?, ?, ?)
+                                                `, [matchId, adminId, JSON.stringify({ [adminId]: 100 })], function(err) {
+                                                    if (err) {
+                                                        console.error('Error creating test submission:', err);
+                                                        return;
+                                                    }
+                                                    
+                                                    console.log('Test data created successfully');
+                                                });
                                             });
                                         });
                                     });
