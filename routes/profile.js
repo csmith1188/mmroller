@@ -33,23 +33,35 @@ router.get('/profile', (req, res) => {
                 return res.status(500).send('Error fetching organizations');
             }
             
-            // Get user's events
+            // Get user's events with stats
             db.all(`
-                SELECT e.*, o.name as organization_name
+                SELECT e.*, o.name as organization_name,
+                       pes.mmr, pes.matches_played, pes.wins, pes.losses
                 FROM events e
                 JOIN event_participants ep ON e.id = ep.event_id
                 JOIN organizations o ON e.organization_id = o.id
+                LEFT JOIN player_event_stats pes ON pes.event_id = e.id AND pes.user_id = ep.user_id
                 WHERE ep.user_id = ?
+                ORDER BY e.created_at DESC
             `, [userId], (err, events) => {
                 if (err) {
                     console.error(err);
                     return res.status(500).send('Error fetching events');
                 }
                 
+                // Format stats for display
+                const eventsWithStats = events.map(event => ({
+                    ...event,
+                    mmr: event.mmr || 1500,
+                    matches_played: event.matches_played || 0,
+                    wins: event.wins || 0,
+                    losses: event.losses || 0
+                }));
+                
                 res.render('profile', { 
                     user, 
                     organizations, 
-                    events,
+                    events: eventsWithStats,
                     isViewingOwnProfile: true
                 });
             });
@@ -165,23 +177,35 @@ router.get('/profile/:id', (req, res) => {
                 return res.status(500).send('Error fetching organizations');
             }
             
-            // Get user's events
+            // Get user's events with stats
             db.all(`
-                SELECT e.*, o.name as organization_name
+                SELECT e.*, o.name as organization_name,
+                       pes.mmr, pes.matches_played, pes.wins, pes.losses
                 FROM events e
                 JOIN event_participants ep ON e.id = ep.event_id
                 JOIN organizations o ON e.organization_id = o.id
+                LEFT JOIN player_event_stats pes ON pes.event_id = e.id AND pes.user_id = ep.user_id
                 WHERE ep.user_id = ?
+                ORDER BY e.created_at DESC
             `, [userId], (err, events) => {
                 if (err) {
                     console.error(err);
                     return res.status(500).send('Error fetching events');
                 }
                 
+                // Format stats for display
+                const eventsWithStats = events.map(event => ({
+                    ...event,
+                    mmr: event.mmr || 1500,
+                    matches_played: event.matches_played || 0,
+                    wins: event.wins || 0,
+                    losses: event.losses || 0
+                }));
+                
                 res.render('profile', { 
                     user, 
                     organizations, 
-                    events,
+                    events: eventsWithStats,
                     isViewingOwnProfile: userId === currentUserId
                 });
             });

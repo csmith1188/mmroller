@@ -15,26 +15,57 @@
                         <p><%= event.description %></p>
                     <% } %>
                     
+                    <h5 class="mt-4">Participants</h5>
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Player</th>
+                                    <th class="text-end">MMR</th>
+                                    <th class="text-end">Matches</th>
+                                    <th class="text-end">W/L</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <% participants.forEach(participant => { %>
+                                    <tr>
+                                        <td>
+                                            <a href="/profile/<%= participant.id %>" class="text-decoration-none">
+                                                <%= participant.username %>
+                                            </a>
+                                        </td>
+                                        <td class="text-end">
+                                            <span class="badge bg-primary"><%= participant.mmr %></span>
+                                        </td>
+                                        <td class="text-end"><%= participant.matches_played %></td>
+                                        <td class="text-end">
+                                            <span class="text-success"><%= participant.wins %></span>
+                                            /
+                                            <span class="text-danger"><%= participant.losses %></span>
+                                        </td>
+                                    </tr>
+                                <% }); %>
+                            </tbody>
+                        </table>
+                    </div>
+                    
                     <h5 class="mt-4">Matches</h5>
                     <% if (event.is_admin) { %>
                         <a href="/events/<%= event.id %>/matches/new" class="btn btn-primary mb-3">Create New Match</a>
                     <% } %>
                     
-                    <% if (matches.length > 0) { %>
+                    <% if (matches.length === 0) { %>
+                        <p>No matches yet.</p>
+                    <% } else { %>
                         <div class="list-group">
                             <% matches.forEach(match => { %>
                                 <a href="/matches/<%= match.id %>" class="list-group-item list-group-item-action">
                                     <div class="d-flex justify-content-between align-items-center">
                                         <div>
-                                            <% match.players.forEach((player, index) => { %>
-                                                <%= player.username %>
-                                                <% if (player.final_score !== null) { %>
-                                                    (<%= player.final_score %>)
-                                                <% } %>
-                                                <% if (index < match.players.length - 1) { %>
-                                                    vs 
-                                                <% } %>
-                                            <% }); %>
+                                            <h6 class="mb-1">Match #<%= match.id %></h6>
+                                            <small class="text-muted">
+                                                Players: <%= match.player_names.join(', ') %>
+                                            </small>
                                         </div>
                                         <span class="badge bg-<%= match.status === 'completed' ? 'success' : (match.status === 'forfeit' ? 'danger' : 'warning') %>">
                                             <%= match.status %>
@@ -43,62 +74,45 @@
                                 </a>
                             <% }); %>
                         </div>
-                    <% } else { %>
-                        <p class="text-muted">No matches yet.</p>
-                    <% } %>
-                    
-                    <h5 class="mt-4">Participants</h5>
-                    <% if (participants.length > 0) { %>
-                        <div class="list-group">
-                            <% participants.forEach(participant => { %>
-                                <div class="list-group-item">
-                                    <a href="/profile/<%= participant.id %>"><%= participant.username %></a>
-                                </div>
-                            <% }); %>
-                        </div>
-                    <% } else { %>
-                        <p class="text-muted">No participants yet.</p>
-                    <% } %>
-
-                    <% if (event.is_admin) { %>
-                        <h5 class="mt-4">Applications</h5>
-                        <% if (applications && applications.length > 0) { %>
-                            <div class="list-group">
-                                <% applications.forEach(application => { %>
-                                    <div class="list-group-item">
-                                        <div class="d-flex justify-content-between align-items-center">
-                                            <div>
-                                                <a href="/profile/<%= application.user_id %>"><%= application.username %></a>
-                                                <small class="text-muted d-block">
-                                                    Applied on: <%= new Date(application.applied_at).toLocaleString() %>
-                                                </small>
-                                            </div>
-                                            <div>
-                                                <form action="/events/<%= event.id %>/accept/<%= application.user_id %>" method="POST" class="d-inline">
-                                                    <button type="submit" class="btn btn-success btn-sm me-2">
-                                                        Accept
-                                                    </button>
-                                                </form>
-                                                <form action="/events/<%= event.id %>/reject/<%= application.user_id %>" method="POST" class="d-inline">
-                                                    <button type="submit" class="btn btn-danger btn-sm">
-                                                        Reject
-                                                    </button>
-                                                </form>
-                                            </div>
-                                        </div>
-                                    </div>
-                                <% }); %>
-                            </div>
-                        <% } else { %>
-                            <p class="text-muted">No pending applications.</p>
-                        <% } %>
                     <% } %>
                 </div>
             </div>
         </div>
         
         <div class="col-md-4">
-            <div class="card mb-4">
+            <% if (event.is_admin && applications.length > 0) { %>
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Applications</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="list-group">
+                            <% applications.forEach(application => { %>
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <h6 class="mb-1"><%= application.username %></h6>
+                                            <small class="text-muted">
+                                                Applied: <%= new Date(application.applied_at).toLocaleString() %>
+                                            </small>
+                                        </div>
+                                        <div>
+                                            <form action="/events/<%= event.id %>/accept/<%= application.user_id %>" method="POST" class="d-inline">
+                                                <button type="submit" class="btn btn-success btn-sm">Accept</button>
+                                            </form>
+                                            <form action="/events/<%= event.id %>/reject/<%= application.user_id %>" method="POST" class="d-inline">
+                                                <button type="submit" class="btn btn-danger btn-sm">Reject</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            <% }); %>
+                        </div>
+                    </div>
+                </div>
+            <% } %>
+            
+            <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">Event Details</h5>
                 </div>

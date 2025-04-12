@@ -1,6 +1,204 @@
 const express = require('express');
 const router = express.Router();
 
+// ELO Rating calculation helper
+function calculateEloRating(winnerRating, loserRating, kFactor = 32) {
+    const expectedScoreWinner = 1 / (1 + Math.pow(10, (loserRating - winnerRating) / 400));
+    const expectedScoreLoser = 1 / (1 + Math.pow(10, (winnerRating - loserRating) / 400));
+    
+    const newWinnerRating = Math.round(winnerRating + kFactor * (1 - expectedScoreWinner));
+    const newLoserRating = Math.round(loserRating + kFactor * (0 - expectedScoreLoser));
+    
+    return {
+        winner: newWinnerRating,
+        loser: newLoserRating
+    };
+}
+
+// Helper to update player stats
+async function updatePlayerStats(db, matchId, eventId, players, scores, isUndo = false) {
+    // Get current stats for all players
+    const stats = await new Promise((resolve, reject) => {
+        const placeholders = players.map(() => '?').join(',');
+        db.all(`
+            SELECT user_id, mmr, matches_played, wins, losses
+            FROM player_event_stats
+            WHERE event_id = ? AND user_id IN (${placeholders})
+        `, [eventId, ...players.map(p => p.user_id)], (err, results) => {
+            if (err) reject(err);
+            else resolve(results);
+        });
+    });
+
+    // Sort players by score
+    const sortedPlayers = [...players].sort((a, b) => {
+        const scoreA = scores[players.indexOf(a)];
+        const scoreB = scores[players.indexOf(b)];
+        return scores[players.indexOf(b)] - scores[players.indexOf(a)];
+    });
+
+    const winner = sortedPlayers[0];
+    const loser = sortedPlayers[1];
+    
+    let winnerStats = stats.find(s => s.user_id === winner.user_id);
+    let loserStats = stats.find(s => s.user_id === loser.user_id);
+    
+    // If either player doesn't have stats, create them
+    if (!winnerStats || !loserStats) {
+        // Create missing stats
+        const missingPlayers = [];
+        if (!winnerStats) missingPlayers.push(winner.user_id);
+        if (!loserStats) missingPlayers.push(loser.user_id);
+        
+        await Promise.all(missingPlayers.map(playerId => {
+            return new Promise((resolve, reject) => {
+                db.run(`
+                    INSERT INTO player_event_stats (event_id, user_id, mmr, matches_played, wins, losses)
+                    VALUES (?, ?, 1500, 0, 0, 0)
+                `, [eventId, playerId], (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            });
+        }));
+        
+        // Fetch the newly created stats
+        const newStats = await new Promise((resolve, reject) => {
+            const placeholders = missingPlayers.map(() => '?').join(',');
+            db.all(`
+                SELECT user_id, mmr, matches_played, wins, losses
+                FROM player_event_stats
+                WHERE event_id = ? AND user_id IN (${placeholders})
+            `, [eventId, ...missingPlayers], (err, results) => {
+                if (err) reject(err);
+                else resolve(results);
+            });
+        });
+        
+        // Update stats objects
+        if (!winnerStats) {
+            winnerStats = newStats.find(s => s.user_id === winner.user_id);
+        }
+        if (!loserStats) {
+            loserStats = newStats.find(s => s.user_id === loser.user_id);
+        }
+    }
+    
+    // Calculate new ratings
+    const newRatings = calculateEloRating(winnerStats.mmr, loserStats.mmr);
+    
+    // Update stats for both players
+    const updates = [winner, loser].map((player, index) => {
+        const isWinner = index === 0;
+        const playerStats = isWinner ? winnerStats : loserStats;
+        const newRating = isWinner ? newRatings.winner : newRatings.loser;
+        const mmrChange = newRating - playerStats.mmr;
+        
+        // Record stat changes in match_players
+        const recordChanges = new Promise((resolve, reject) => {
+            db.run(`
+                UPDATE match_players
+                SET mmr_change = ?,
+                    matches_change = 1,
+                    wins_change = ?,
+                    losses_change = ?
+                WHERE match_id = ? AND user_id = ?
+            `, [
+                mmrChange,
+                isWinner ? 1 : 0,
+                isWinner ? 0 : 1,
+                matchId,
+                player.user_id
+            ], (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+
+        // Update player_event_stats
+        const updateStats = new Promise((resolve, reject) => {
+            db.run(`
+                UPDATE player_event_stats
+                SET mmr = mmr + ?,
+                    matches_played = matches_played + 1,
+                    wins = wins + ?,
+                    losses = losses + ?
+                WHERE event_id = ? AND user_id = ?
+            `, [
+                mmrChange,
+                isWinner ? 1 : 0,
+                isWinner ? 0 : 1,
+                eventId,
+                player.user_id
+            ], (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+
+        return Promise.all([recordChanges, updateStats]);
+    });
+    
+    await Promise.all(updates);
+}
+
+// Helper to revert player stats
+async function revertPlayerStats(db, matchId, eventId) {
+    // Get the stat changes from match_players
+    const players = await new Promise((resolve, reject) => {
+        db.all(`
+            SELECT mp.*, u.username
+            FROM match_players mp
+            JOIN users u ON mp.user_id = u.id
+            WHERE mp.match_id = ?
+        `, [matchId], (err, results) => {
+            if (err) reject(err);
+            else resolve(results);
+        });
+    });
+
+    // Revert stats for all players
+    const updates = players.map(player => {
+        return new Promise((resolve, reject) => {
+            db.run(`
+                UPDATE player_event_stats
+                SET mmr = mmr - ?,
+                    matches_played = matches_played - ?,
+                    wins = wins - ?,
+                    losses = losses - ?
+                WHERE event_id = ? AND user_id = ?
+            `, [
+                player.mmr_change || 0,
+                player.matches_change || 0,
+                player.wins_change || 0,
+                player.losses_change || 0,
+                eventId,
+                player.user_id
+            ], (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+    });
+
+    await Promise.all(updates);
+
+    // Clear the recorded changes
+    await new Promise((resolve, reject) => {
+        db.run(`
+            UPDATE match_players
+            SET mmr_change = NULL,
+                matches_change = 0,
+                wins_change = 0,
+                losses_change = 0
+            WHERE match_id = ?
+        `, [matchId], (err) => {
+            if (err) reject(err);
+            else resolve();
+        });
+    });
+}
+
 // Get match details
 router.get('/matches/:id', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
@@ -223,29 +421,68 @@ router.post('/matches/:id/status', (req, res) => {
     const userId = req.session.userId;
     const status = req.body.status;
     
-    // Verify user is admin
+    // Verify user is admin and get match details
     db.get(`
-        SELECT 1 FROM matches m
+        SELECT m.*, e.id as event_id, o.admin_id
+        FROM matches m
         JOIN events e ON m.event_id = e.id
         JOIN organizations o ON e.organization_id = o.id
         WHERE m.id = ? AND o.admin_id = ?
-    `, [matchId, userId], (err, isAdmin) => {
-        if (err || !isAdmin) {
+    `, [matchId, userId], async (err, match) => {
+        if (err || !match) {
             return res.status(403).send('Unauthorized');
         }
-        
-        db.run(`
-            UPDATE matches
-            SET status = ?,
-                completed_at = CASE WHEN ? = 'completed' THEN datetime('now') ELSE completed_at END
-            WHERE id = ?
-        `, [status, status, matchId], (err) => {
+
+        db.run('BEGIN TRANSACTION', async (err) => {
             if (err) {
                 console.error(err);
-                return res.status(500).send('Error updating match status');
+                return res.status(500).send('Error starting transaction');
             }
-            
-            res.redirect(`/matches/${matchId}`);
+
+            try {
+                // If changing from completed, revert stats
+                if (match.status === 'completed' && status !== 'completed') {
+                    await revertPlayerStats(db, matchId, match.event_id);
+                    
+                    // Clear final scores
+                    await new Promise((resolve, reject) => {
+                        db.run(`
+                            UPDATE match_players
+                            SET final_score = NULL
+                            WHERE match_id = ?
+                        `, [matchId], (err) => {
+                            if (err) reject(err);
+                            else resolve();
+                        });
+                    });
+                }
+
+                // Update match status
+                await new Promise((resolve, reject) => {
+                    db.run(`
+                        UPDATE matches
+                        SET status = ?,
+                            completed_at = CASE WHEN ? = 'completed' THEN datetime('now') ELSE NULL END
+                        WHERE id = ?
+                    `, [status, status, matchId], (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+
+                await new Promise((resolve, reject) => {
+                    db.run('COMMIT', (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+
+                res.redirect(`/matches/${matchId}`);
+            } catch (error) {
+                db.run('ROLLBACK');
+                console.error(error);
+                res.status(500).send('Error updating match status');
+            }
         });
     });
 });
@@ -260,95 +497,97 @@ router.post('/matches/:id/finalize', (req, res) => {
     
     // Verify user is admin
     db.get(`
-        SELECT 1 FROM matches m
+        SELECT m.*, e.id as event_id, o.admin_id 
+        FROM matches m
         JOIN events e ON m.event_id = e.id
         JOIN organizations o ON e.organization_id = o.id
         WHERE m.id = ? AND o.admin_id = ?
-    `, [matchId, userId], (err, isAdmin) => {
-        if (err || !isAdmin) {
+    `, [matchId, userId], async (err, match) => {
+        if (err || !match) {
             return res.status(403).send('Unauthorized');
         }
         
         // Start transaction
-        db.run('BEGIN TRANSACTION', (err) => {
+        db.run('BEGIN TRANSACTION', async (err) => {
             if (err) {
                 console.error(err);
                 return res.status(500).send('Error starting transaction');
             }
             
-            // Get submission scores
-            db.get(`
-                SELECT scores
-                FROM match_submissions
-                WHERE id = ?
-            `, [submissionId], (err, submission) => {
-                if (err) {
-                    db.run('ROLLBACK');
-                    console.error(err);
-                    return res.status(500).send('Error fetching submission');
-                }
-                
-                // Update match status and final scores
-                db.run(`
-                    UPDATE matches
-                    SET status = 'completed',
-                        completed_at = datetime('now')
-                    WHERE id = ?
-                `, [matchId], (err) => {
-                    if (err) {
-                        db.run('ROLLBACK');
-                        console.error(err);
-                        return res.status(500).send('Error updating match status');
-                    }
-                    
-                    // Get players in order to update their scores
-                    db.all(`
-                        SELECT user_id, position
-                        FROM match_players
-                        WHERE match_id = ?
-                        ORDER BY position
-                    `, [matchId], (err, players) => {
-                        if (err) {
-                            db.run('ROLLBACK');
-                            console.error(err);
-                            return res.status(500).send('Error fetching players');
-                        }
-
-                        // Parse scores array from submission
-                        const scores = JSON.parse(submission.scores);
-                        
-                        // Update each player's final score based on their position
-                        const updates = players.map((player, index) => {
-                            return new Promise((resolve, reject) => {
-                                db.run(`
-                                    UPDATE match_players
-                                    SET final_score = ?
-                                    WHERE match_id = ? AND user_id = ?
-                                `, [scores[index], matchId, player.user_id], (err) => {
-                                    if (err) reject(err);
-                                    else resolve();
-                                });
-                            });
-                        });
-                        
-                        Promise.all(updates)
-                            .then(() => {
-                                db.run('COMMIT', (err) => {
-                                    if (err) {
-                                        console.error(err);
-                                        return res.status(500).send('Error committing transaction');
-                                    }
-                                    res.redirect(`/matches/${matchId}`);
-                                });
-                            })
-                            .catch(err => {
-                                db.run('ROLLBACK');
-                                console.error(err);
-                                res.status(500).send('Error updating player scores');
-                            });
+            try {
+                // Get submission scores
+                const submission = await new Promise((resolve, reject) => {
+                    db.get(`
+                        SELECT scores
+                        FROM match_submissions
+                        WHERE id = ?
+                    `, [submissionId], (err, result) => {
+                        if (err) reject(err);
+                        else resolve(result);
                     });
                 });
-            });
+
+                // Get match players
+                const players = await new Promise((resolve, reject) => {
+                    db.all(`
+                        SELECT mp.*, u.username
+                        FROM match_players mp
+                        JOIN users u ON mp.user_id = u.id
+                        WHERE mp.match_id = ?
+                        ORDER BY mp.position
+                    `, [matchId], (err, results) => {
+                        if (err) reject(err);
+                        else resolve(results);
+                    });
+                });
+
+                // Update match status
+                await new Promise((resolve, reject) => {
+                    db.run(`
+                        UPDATE matches
+                        SET status = 'completed',
+                            completed_at = datetime('now')
+                        WHERE id = ?
+                    `, [matchId], (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+
+                const scores = JSON.parse(submission.scores);
+                
+                // Update player final scores and stats
+                await updatePlayerStats(db, matchId, match.event_id, players, scores);
+                
+                // Update match_players final scores
+                const scoreUpdates = players.map((player, index) => {
+                    return new Promise((resolve, reject) => {
+                        db.run(`
+                            UPDATE match_players
+                            SET final_score = ?
+                            WHERE match_id = ? AND user_id = ?
+                        `, [scores[index], matchId, player.user_id], (err) => {
+                            if (err) reject(err);
+                            else resolve();
+                        });
+                    });
+                });
+
+                await Promise.all(scoreUpdates);
+                
+                await new Promise((resolve, reject) => {
+                    db.run('COMMIT', (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+
+                res.redirect(`/matches/${matchId}`);
+            } catch (error) {
+                db.run('ROLLBACK');
+                console.error(error);
+                res.status(500).send('Error updating match and player stats');
+            }
         });
     });
 });

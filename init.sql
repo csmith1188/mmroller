@@ -79,6 +79,10 @@ CREATE TABLE IF NOT EXISTS match_players (
     user_id INTEGER NOT NULL,
     position INTEGER NOT NULL,
     final_score INTEGER,
+    mmr_change INTEGER,
+    matches_change INTEGER DEFAULT 0,
+    wins_change INTEGER DEFAULT 0,
+    losses_change INTEGER DEFAULT 0,
     PRIMARY KEY (match_id, user_id),
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
@@ -92,5 +96,18 @@ CREATE TABLE IF NOT EXISTS match_submissions (
     scores TEXT NOT NULL,
     submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Create player_event_stats table
+CREATE TABLE IF NOT EXISTS player_event_stats (
+    event_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    mmr INTEGER DEFAULT 1500,
+    matches_played INTEGER DEFAULT 0,
+    wins INTEGER DEFAULT 0,
+    losses INTEGER DEFAULT 0,
+    PRIMARY KEY (event_id, user_id),
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ); 

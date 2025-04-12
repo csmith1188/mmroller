@@ -26,15 +26,27 @@ router.get('/events/:id', (req, res) => {
         
         // Get event participants
         db.all(`
-            SELECT u.id, u.username
+            SELECT u.id, u.username,
+                   pes.mmr, pes.matches_played, pes.wins, pes.losses
             FROM users u
             JOIN event_participants ep ON u.id = ep.user_id
+            LEFT JOIN player_event_stats pes ON pes.event_id = ep.event_id AND pes.user_id = u.id
             WHERE ep.event_id = ?
+            ORDER BY pes.mmr DESC NULLS LAST
         `, [eventId], (err, participants) => {
             if (err) {
                 console.error(err);
                 return res.status(500).send('Error fetching participants');
             }
+            
+            // Format stats for display
+            const participantsWithStats = participants.map(participant => ({
+                ...participant,
+                mmr: participant.mmr || 1500,
+                matches_played: participant.matches_played || 0,
+                wins: participant.wins || 0,
+                losses: participant.losses || 0
+            }));
             
             // Get event matches with player information
             db.all(`
@@ -54,30 +66,15 @@ router.get('/events/:id', (req, res) => {
                     console.error(err);
                     return res.status(500).send('Error fetching matches');
                 }
-
-                // Process the matches to create a more usable format
-                const processedMatches = matches.map(match => {
-                    const playerNames = match.player_names.split(',');
-                    const playerIds = match.player_ids.split(',').map(Number);
-                    const positions = match.positions.split(',').map(Number);
-                    const finalScores = match.final_scores ? match.final_scores.split(',').map(Number) : Array(playerNames.length).fill(null);
-
-                    const players = playerNames.map((name, i) => ({
-                        id: playerIds[i],
-                        username: name,
-                        position: positions[i],
-                        final_score: finalScores[i]
-                    })).sort((a, b) => a.position - b.position);
-
-                    return {
-                        ...match,
-                        players,
-                        player_names: undefined,
-                        player_ids: undefined,
-                        positions: undefined,
-                        final_scores: undefined
-                    };
-                });
+                
+                // Process matches to split concatenated fields
+                const processedMatches = matches.map(match => ({
+                    ...match,
+                    player_names: match.player_names ? match.player_names.split(',') : [],
+                    player_ids: match.player_ids ? match.player_ids.split(',').map(Number) : [],
+                    positions: match.positions ? match.positions.split(',').map(Number) : [],
+                    final_scores: match.final_scores ? match.final_scores.split(',').map(Number) : []
+                }));
                 
                 // Get event applications if user is admin
                 if (event.is_admin) {
@@ -95,7 +92,7 @@ router.get('/events/:id', (req, res) => {
                         
                         res.render('event', {
                             event,
-                            participants,
+                            participants: participantsWithStats,
                             matches: processedMatches,
                             applications,
                             userId
@@ -104,7 +101,7 @@ router.get('/events/:id', (req, res) => {
                 } else {
                     res.render('event', {
                         event,
-                        participants,
+                        participants: participantsWithStats,
                         matches: processedMatches,
                         applications: [],
                         userId
@@ -202,25 +199,37 @@ router.post('/events/:id/accept/:userId', (req, res) => {
                     return res.status(500).send('Error adding participant');
                 }
                 
-                // Remove application
+                // Initialize player stats
                 db.run(`
-                    DELETE FROM event_applications
-                    WHERE event_id = ? AND user_id = ?
+                    INSERT INTO player_event_stats (event_id, user_id)
+                    VALUES (?, ?)
                 `, [eventId, userId], (err) => {
                     if (err) {
                         db.run('ROLLBACK');
                         console.error(err);
-                        return res.status(500).send('Error removing application');
+                        return res.status(500).send('Error initializing player stats');
                     }
-                    
-                    // Commit transaction
-                    db.run('COMMIT', (err) => {
+                
+                    // Remove application
+                    db.run(`
+                        DELETE FROM event_applications
+                        WHERE event_id = ? AND user_id = ?
+                    `, [eventId, userId], (err) => {
                         if (err) {
+                            db.run('ROLLBACK');
                             console.error(err);
-                            return res.status(500).send('Error committing transaction');
+                            return res.status(500).send('Error removing application');
                         }
                         
-                        res.redirect(`/events/${eventId}`);
+                        // Commit transaction
+                        db.run('COMMIT', (err) => {
+                            if (err) {
+                                console.error(err);
+                                return res.status(500).send('Error committing transaction');
+                            }
+                            
+                            res.redirect(`/events/${eventId}`);
+                        });
                     });
                 });
             });
