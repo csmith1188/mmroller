@@ -1,0 +1,33 @@
+<%- include('partials/header', { title: 'Submit Match Score' }) %>
+
+    <div class="container mt-4">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="text-center">Submit Match Score</h3>
+                    </div>
+                    <div class="card-body">
+                        <form action="/matches/<%= match.id %>/submit" method="POST">
+                            <div class="mb-3">
+                                <h5><%= match.player1_name %> vs <%= match.player2_name %></h5>
+                            </div>
+                            <div class="mb-3">
+                                <label for="player1_score" class="form-label"><%= match.player1_name %> Score</label>
+                                <input type="number" class="form-control" id="player1_score" name="player1_score" min="0" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="player2_score" class="form-label"><%= match.player2_name %> Score</label>
+                                <input type="number" class="form-control" id="player2_score" name="player2_score" min="0" required>
+                            </div>
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary">Submit Score</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<%- include('partials/footer') %> 

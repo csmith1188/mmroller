@@ -1,0 +1,22 @@
+<%- include('partials/header', { title: 'Edit Profile' }) %>
+
+    <div class="container mt-4">
+        <h1>Edit Profile</h1>
+        
+        <form action="/profile/edit" method="POST" class="mt-4">
+            <div class="mb-3">
+                <label for="username" class="form-label">Username</label>
+                <input type="text" class="form-control" id="username" name="username" value="<%= user.username %>" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="email" class="form-label">Email</label>
+                <input type="email" class="form-control" id="email" name="email" value="<%= user.email %>" required>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Save Changes</button>
+            <a href="/profile" class="btn btn-secondary">Cancel</a>
+        </form>
+    </div>
+
+<%- include('partials/footer') %> 

@@ -1,0 +1,115 @@
+<%- include('partials/header', { title: organization.name }) %>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="mb-0"><%= organization.name %></h2>
+                    </div>
+                    <div class="card-body">
+                        <p><%= organization.description %></p>
+                        
+                        <% if (isAdmin) { %>
+                            <div class="mb-4">
+                                <a href="/organizations/<%= organization.id %>/events/new" class="btn btn-primary">Create Event</a>
+                            </div>
+                        <% } %>
+                        
+                        <h3>Events</h3>
+                        <% if (events.length === 0) { %>
+                            <p>No events yet.</p>
+                        <% } else { %>
+                            <div class="list-group">
+                                <% events.forEach(event => { %>
+                                    <a href="/events/<%= event.id %>" class="list-group-item list-group-item-action">
+                                        <div class="d-flex w-100 justify-content-between">
+                                            <h5 class="mb-1"><%= event.name %></h5>
+                                            <% if (event.is_participant) { %>
+                                                <span class="badge bg-success">Participant</span>
+                                            <% } %>
+                                        </div>
+                                        <p class="mb-1"><%= event.description %></p>
+                                        <small>
+                                            <%= new Date(event.start_date).toLocaleDateString() %> to 
+                                            <%= new Date(event.end_date).toLocaleDateString() %>
+                                        </small>
+                                    </a>
+                                <% }); %>
+                            </div>
+                        <% } %>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="mb-0">Members</h3>
+                    </div>
+                    <div class="card-body">
+                        <% if (!isMember) { %>
+                            <form action="/organizations/<%= organization.id %>/join" method="POST" class="mb-3">
+                                <button type="submit" class="btn btn-primary w-100">Join Organization</button>
+                            </form>
+                        <% } %>
+                        
+                        <div class="list-group">
+                            <% members.forEach(member => { %>
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <a href="/profile/<%= member.id %>" class="text-decoration-none"><%= member.username %></a>
+                                            <% if (member.is_admin) { %>
+                                                <span class="badge bg-primary ms-2">Admin</span>
+                                            <% } %>
+                                            <% if (member.is_creator) { %>
+                                                <span class="badge bg-success ms-2">Creator</span>
+                                            <% } %>
+                                        </div>
+                                        <% if (isAdmin && member.id !== userId) { %>
+                                            <div class="dropdown">
+                                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                    Actions
+                                                </button>
+                                                <ul class="dropdown-menu">
+                                                    <% if (!member.is_creator) { %>
+                                                        <% if (member.is_admin) { %>
+                                                            <li>
+                                                                <form action="/organizations/<%= organization.id %>/remove-admin/<%= member.id %>" method="POST" class="dropdown-item">
+                                                                    <button type="submit" class="btn btn-link text-danger p-0 w-100 text-start">Remove Admin</button>
+                                                                </form>
+                                                            </li>
+                                                        <% } else { %>
+                                                            <li>
+                                                                <form action="/organizations/<%= organization.id %>/promote/<%= member.id %>" method="POST" class="dropdown-item">
+                                                                    <button type="submit" class="btn btn-link p-0 w-100 text-start">Promote to Admin</button>
+                                                                </form>
+                                                            </li>
+                                                        <% } %>
+                                                        <li><hr class="dropdown-divider"></li>
+                                                    <% } %>
+                                                    <li>
+                                                        <form action="/organizations/<%= organization.id %>/kick/<%= member.id %>" method="POST" class="dropdown-item">
+                                                            <button type="submit" class="btn btn-link text-danger p-0 w-100 text-start">Kick</button>
+                                                        </form>
+                                                    </li>
+                                                    <li>
+                                                        <form action="/organizations/<%= organization.id %>/ban/<%= member.id %>" method="POST" class="dropdown-item">
+                                                            <button type="submit" class="btn btn-link text-danger p-0 w-100 text-start">Ban</button>
+                                                        </form>
+                                                    </li>
+                                                </ul>
+                                            </div>
+                                        <% } %>
+                                    </div>
+                                </div>
+                            <% }); %>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<%- include('partials/footer') %> 

@@ -1,0 +1,31 @@
+<%- include('partials/header', { title: 'Edit Organization' }) %>
+
+    <div class="container mt-4">
+        <div class="row justify-content-center">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header">
+                        <h3 class="text-center">Edit Organization</h3>
+                    </div>
+                    <div class="card-body">
+                        <form action="/organizations/<%= organization.id %>" method="POST">
+                            <input type="hidden" name="_method" value="PUT">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Organization Name</label>
+                                <input type="text" class="form-control" id="name" name="name" value="<%= organization.name %>" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="description" class="form-label">Description</label>
+                                <textarea class="form-control" id="description" name="description" rows="3"><%= organization.description %></textarea>
+                            </div>
+                            <div class="d-grid">
+                                <button type="submit" class="btn btn-primary">Update Organization</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+<%- include('partials/footer') %> 

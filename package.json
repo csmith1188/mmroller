@@ -1,0 +1,31 @@
+{
+  "name": "mmroller",
+  "version": "1.0.0",
+  "description": "A tournament management system for organizing and tracking matches",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "init-db": "node database/init.js",
+    "dev": "nodemon app.js",
+    "restart": "rm -f database/database.sqlite && node database/init.js && nodemon app.js"
+  },
+  "keywords": [
+    "tournament",
+    "management",
+    "matches",
+    "scores"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "connect-sqlite3": "^0.9.15",
+    "ejs": "^3.1.9",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3",
+    "sqlite3": "^5.1.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

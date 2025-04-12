@@ -1,0 +1,32 @@
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="text-center">Create New Match</h3>
+            </div>
+            <div class="card-body">
+                <form action="/events/<%= eventId %>/matches" method="POST">
+                    <div class="mb-3">
+                        <label for="player1_id" class="form-label">Player 1</label>
+                        <select class="form-select" id="player1_id" name="player1_id" required>
+                            <% participants.forEach(participant => { %>
+                                <option value="<%= participant.id %>"><%= participant.username %></option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="player2_id" class="form-label">Player 2</label>
+                        <select class="form-select" id="player2_id" name="player2_id" required>
+                            <% participants.forEach(participant => { %>
+                                <option value="<%= participant.id %>"><%= participant.username %></option>
+                            <% }); %>
+                        </select>
+                    </div>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">Create Match</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div> 

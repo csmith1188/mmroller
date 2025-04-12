@@ -1,0 +1,153 @@
+<%- include('partials/header', { title: 'Create New Match' }) %>
+
+    <div class="container mt-4">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h2 class="mb-0">Create New Match</h2>
+                    </div>
+                    <div class="card-body">
+                        <form action="/events/<%= eventId %>/matches" method="POST" id="matchForm">
+                            <div id="playersContainer">
+                                <!-- Player inputs will be added here dynamically -->
+                            </div>
+                            
+                            <div class="mb-3">
+                                <button type="button" class="btn btn-outline-primary" id="addPlayerBtn">
+                                    <i class="bi bi-plus-circle"></i> Add Player
+                                </button>
+                            </div>
+                            
+                            <div class="d-grid gap-2">
+                                <button type="submit" class="btn btn-primary">Create Match</button>
+                                <a href="/events/<%= eventId %>" class="btn btn-secondary">Cancel</a>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <style>
+        .search-results {
+            position: absolute;
+            width: 100%;
+            max-height: 200px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            z-index: 1000;
+            display: none;
+        }
+        .search-result-item {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+        .search-result-item:hover {
+            background-color: #f8f9fa;
+        }
+        .search-container {
+            position: relative;
+        }
+        .player-input-group {
+            margin-bottom: 1rem;
+        }
+        .player-input-group .input-group {
+            margin-bottom: 0.5rem;
+        }
+    </style>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const playersContainer = document.getElementById('playersContainer');
+            const addPlayerBtn = document.getElementById('addPlayerBtn');
+            let playerCount = 0;
+
+            function createPlayerInput() {
+                const playerId = `player_${playerCount}`;
+                const playerGroup = document.createElement('div');
+                playerGroup.className = 'player-input-group';
+                playerGroup.id = `player_group_${playerCount}`;
+                
+                playerGroup.innerHTML = `
+                    <div class="input-group">
+                        <span class="input-group-text">Player ${playerCount + 1}</span>
+                        <div class="search-container flex-grow-1">
+                            <input type="text" class="form-control" id="${playerId}_search" name="player_search[]" placeholder="Search for player..." autocomplete="off">
+                            <input type="hidden" id="${playerId}_id" name="player_ids[]">
+                            <div class="search-results" id="${playerId}_results"></div>
+                        </div>
+                        <button type="button" class="btn btn-outline-danger remove-player" data-player-id="${playerCount}">
+                            <i class="bi bi-x-circle"></i>
+                        </button>
+                    </div>
+                `;
+                
+                playersContainer.appendChild(playerGroup);
+                setupSearchHandlers(playerId);
+                playerCount++;
+            }
+
+            function setupSearchHandlers(playerId) {
+                const searchInput = document.getElementById(`${playerId}_search`);
+                const hiddenInput = document.getElementById(`${playerId}_id`);
+                const resultsDiv = document.getElementById(`${playerId}_results`);
+                
+                searchInput.addEventListener('input', () => {
+                    const query = searchInput.value.trim();
+                    if (query.length < 2) {
+                        resultsDiv.style.display = 'none';
+                        return;
+                    }
+                    
+                    fetch(`/events/<%= eventId %>/search-players?q=${encodeURIComponent(query)}`)
+                        .then(response => response.json())
+                        .then(players => {
+                            resultsDiv.innerHTML = '';
+                            players.forEach(player => {
+                                const div = document.createElement('div');
+                                div.className = 'search-result-item';
+                                div.textContent = player.username;
+                                div.onclick = () => {
+                                    searchInput.value = player.username;
+                                    hiddenInput.value = player.id;
+                                    resultsDiv.style.display = 'none';
+                                };
+                                resultsDiv.appendChild(div);
+                            });
+                            resultsDiv.style.display = players.length ? 'block' : 'none';
+                        });
+                });
+                
+                document.addEventListener('click', (e) => {
+                    if (!searchInput.contains(e.target) && !resultsDiv.contains(e.target)) {
+                        resultsDiv.style.display = 'none';
+                    }
+                });
+            }
+
+            // Add initial player inputs
+            createPlayerInput();
+            createPlayerInput();
+
+            // Add player button handler
+            addPlayerBtn.addEventListener('click', createPlayerInput);
+
+            // Remove player button handlers
+            document.addEventListener('click', (e) => {
+                if (e.target.classList.contains('remove-player') || e.target.closest('.remove-player')) {
+                    const button = e.target.classList.contains('remove-player') ? e.target : e.target.closest('.remove-player');
+                    const playerId = button.dataset.playerId;
+                    const playerGroup = document.getElementById(`player_group_${playerId}`);
+                    if (playerGroup) {
+                        playerGroup.remove();
+                    }
+                }
+            });
+        });
+    </script>
+
+<%- include('partials/footer') %> 

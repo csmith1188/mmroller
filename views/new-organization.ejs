@@ -1,0 +1,21 @@
+<%- include('partials/header', { title: 'Create Organization' }) %>
+
+    <div class="container mt-4">
+        <h1>Create New Organization</h1>
+        
+        <form action="/organizations" method="POST" class="mt-4">
+            <div class="mb-3">
+                <label for="name" class="form-label">Organization Name</label>
+                <input type="text" class="form-control" id="name" name="name" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="description" class="form-label">Description</label>
+                <textarea class="form-control" id="description" name="description" rows="3"></textarea>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Create Organization</button>
+        </form>
+    </div>
+
+<%- include('partials/footer') %> 

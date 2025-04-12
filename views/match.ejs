@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Match Details - MM Roller</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <%- include('partials/header', { title: 'Match Details' }) %>
+
+    <div class="container mt-4">
+        <div class="card">
+            <div class="card-header">
+                <h1 class="h4 mb-0">Match Details</h1>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h5>Players</h5>
+                        <div class="list-group mb-4">
+                            <% match.players.forEach(player => { %>
+                                <div class="list-group-item">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div>
+                                            <a href="/profile/<%= player.id %>"><%= player.username %></a>
+                                            <% if (player.position) { %>
+                                                <span class="text-muted">(Position <%= player.position %>)</span>
+                                            <% } %>
+                                        </div>
+                                        <% if (match.status === 'completed' && player.final_score !== null) { %>
+                                            <span class="badge bg-primary">Score: <%= player.final_score %></span>
+                                        <% } %>
+                                    </div>
+                                </div>
+                            <% }); %>
+                        </div>
+
+                        <% if (match.status !== 'completed') { %>
+                            <% if (match.is_player || match.is_admin) { %>
+                                <div class="card mb-4">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">Submit Match Results</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <% if (match.current_submission) { %>
+                                            <div class="alert alert-info mb-3">
+                                                <h6>Your Current Submission</h6>
+                                                <% match.players.forEach(player => { %>
+                                                    <p><%= player.username %>: <%= match.current_submission.scores[player.id] || 'Not submitted' %></p>
+                                                <% }); %>
+                                                <small class="text-muted">Submitted on: <%= new Date(match.current_submission.submitted_at).toLocaleString() %></small>
+                                            </div>
+                                        <% } %>
+
+                                        <form action="/matches/<%= match.id %>/scores" method="POST">
+                                            <% match.players.forEach(player => { %>
+                                                <div class="mb-3">
+                                                    <label for="score_<%= player.id %>" class="form-label"><%= player.username %> Score</label>
+                                                    <input type="number" class="form-control" id="score_<%= player.id %>" name="scores[<%= player.id %>]" required>
+                                                </div>
+                                            <% }); %>
+                                            <button type="submit" class="btn btn-primary">Submit Scores</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            <% } %>
+
+                            <% if (match.is_admin) { %>
+                                <div class="card mb-4">
+                                    <div class="card-header">
+                                        <h5 class="mb-0">Admin Actions</h5>
+                                    </div>
+                                    <div class="card-body">
+                                        <form action="/matches/<%= match.id %>/status" method="POST" class="mb-3">
+                                            <div class="mb-3">
+                                                <label for="status" class="form-label">Match Status</label>
+                                                <select class="form-select" id="status" name="status">
+                                                    <option value="pending" <%= match.status === 'pending' ? 'selected' : '' %>>Pending</option>
+                                                    <option value="completed" <%= match.status === 'completed' ? 'selected' : '' %>>Completed</option>
+                                                    <option value="forfeit" <%= match.status === 'forfeit' ? 'selected' : '' %>>Forfeit</option>
+                                                </select>
+                                            </div>
+                                            <button type="submit" class="btn btn-primary">Update Status</button>
+                                        </form>
+
+                                        <% if (match.submissions && match.submissions.length > 0) { %>
+                                            <h6>Player Submissions</h6>
+                                            <div class="list-group mb-3">
+                                                <% match.submissions.forEach(submission => { %>
+                                                    <div class="list-group-item">
+                                                        <div class="d-flex justify-content-between align-items-center">
+                                                            <div>
+                                                                <strong><%= submission.username %></strong>
+                                                                <div class="mt-2">
+                                                                    <% match.players.forEach(player => { %>
+                                                                        <p class="mb-1"><%= player.username %>: <%= submission.scores[player.id] %></p>
+                                                                    <% }); %>
+                                                                </div>
+                                                                <small class="text-muted">Submitted on: <%= new Date(submission.submitted_at).toLocaleString() %></small>
+                                                            </div>
+                                                            <form action="/matches/<%= match.id %>/finalize" method="POST" class="d-inline">
+                                                                <input type="hidden" name="submission_id" value="<%= submission.id %>">
+                                                                <button type="submit" class="btn btn-success btn-sm">Accept Submission</button>
+                                                            </form>
+                                                        </div>
+                                                    </div>
+                                                <% }); %>
+                                            </div>
+                                        <% } %>
+                                    </div>
+                                </div>
+                            <% } %>
+                        <% } %>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h5 class="mb-0">Match Info</h5>
+                            </div>
+                            <div class="card-body">
+                                <p>
+                                    <strong>Status:</strong>
+                                    <span class="badge bg-<%= match.status === 'completed' ? 'success' : (match.status === 'forfeit' ? 'danger' : 'warning') %>">
+                                        <%= match.status %>
+                                    </span>
+                                </p>
+                                <p>
+                                    <strong>Event:</strong>
+                                    <a href="/events/<%= match.event_id %>"><%= match.event_name %></a>
+                                </p>
+                                <p>
+                                    <strong>Created:</strong>
+                                    <%= new Date(match.created_at).toLocaleDateString() %>
+                                </p>
+                                <% if (match.status === 'completed') { %>
+                                    <p>
+                                        <strong>Completed:</strong>
+                                        <%= new Date(match.completed_at).toLocaleDateString() %>
+                                    </p>
+                                <% } %>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <%- include('partials/footer') %>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html> 
