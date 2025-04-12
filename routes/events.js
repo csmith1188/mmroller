@@ -1,8 +1,12 @@
 const express = require('express');
 const router = express.Router();
+const matchRoutes = require('./matches');
+
+// Mount matches routes
+router.use('/:id/matches', matchRoutes);
 
 // Event routes
-router.get('/events/:id', (req, res) => {
+router.get('/:id', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
@@ -136,7 +140,8 @@ router.get('/events/:id', (req, res) => {
                                     participants: participantsWithStats,
                                     matches: processedMatches,
                                     applications,
-                                    userId
+                                    userId,
+                                    isAdmin: event.is_admin
                                 });
                             });
                         } else {
@@ -145,7 +150,8 @@ router.get('/events/:id', (req, res) => {
                                 participants: participantsWithStats,
                                 matches: processedMatches,
                                 applications: [],
-                                userId
+                                userId,
+                                isAdmin: event.is_admin
                             });
                         }
                     });
@@ -155,8 +161,77 @@ router.get('/events/:id', (req, res) => {
     });
 });
 
+// Get match details
+router.get('/:id/matches/:matchId', (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const matchId = req.params.matchId;
+    const userId = req.session.userId;
+    
+    // Get match details with players and event info
+    db.get(`
+        SELECT m.*, e.name as event_name, e.organization_id,
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM organization_admins oa
+                   WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+               ) THEN 1 ELSE 0 END as is_admin
+        FROM matches m
+        JOIN events e ON m.event_id = e.id
+        WHERE m.id = ?
+    `, [userId, matchId], (err, match) => {
+        if (err) {
+            console.error('Error fetching match:', err);
+            return res.status(500).send('Error fetching match details');
+        }
+        
+        if (!match) {
+            return res.status(404).send('Match not found');
+        }
+        
+        // Get match players
+        db.all(`
+            SELECT mp.*, u.username
+            FROM match_players mp
+            JOIN users u ON mp.user_id = u.id
+            WHERE mp.match_id = ?
+            ORDER BY mp.position
+        `, [matchId], (err, players) => {
+            if (err) {
+                console.error('Error fetching match players:', err);
+                return res.status(500).send('Error fetching match players');
+            }
+            
+            // Add players to match object
+            match.players = players;
+            
+            // Get match submissions
+            db.all(`
+                SELECT ms.*, u.username
+                FROM match_submissions ms
+                JOIN users u ON ms.user_id = u.id
+                WHERE ms.match_id = ?
+                ORDER BY ms.submitted_at DESC
+            `, [matchId], (err, submissions) => {
+                if (err) {
+                    console.error('Error fetching match submissions:', err);
+                    return res.status(500).send('Error fetching match submissions');
+                }
+                
+                // Add submissions to match object
+                match.submissions = submissions;
+                
+                res.render('match', {
+                    match,
+                    isAdmin: match.is_admin,
+                    userId
+                });
+            });
+        });
+    });
+});
+
 // Event application route
-router.post('/events/:id/apply', (req, res) => {
+router.post('/:id/apply', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
@@ -207,7 +282,7 @@ router.post('/events/:id/apply', (req, res) => {
 });
 
 // Accept event application
-router.post('/events/:id/accept/:userId', async (req, res) => {
+router.post('/:id/accept/:userId', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
@@ -314,7 +389,7 @@ router.post('/events/:id/accept/:userId', async (req, res) => {
 });
 
 // Reject event application
-router.post('/events/:id/reject/:userId', (req, res) => {
+router.post('/:id/reject/:userId', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
@@ -350,13 +425,13 @@ router.post('/events/:id/reject/:userId', (req, res) => {
 });
 
 // Create new event route
-router.get('/organizations/:id/events/new', (req, res) => {
+router.get('/organizations/:id/new', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     res.render('new-event', { organizationId: req.params.id });
 });
 
 // Create a new event
-router.post('/organizations/:id/events', async (req, res) => {
+router.post('/organizations/:id', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const orgId = req.params.id;
@@ -452,7 +527,7 @@ router.post('/organizations/:id/events', async (req, res) => {
 });
 
 // Search players for event
-router.get('/events/:id/search-players', (req, res) => {
+router.get('/:id/search-players', (req, res) => {
     const db = req.app.locals.db;
     const eventId = req.params.id;
     const query = req.query.q;
@@ -480,7 +555,7 @@ router.get('/events/:id/search-players', (req, res) => {
 });
 
 // Toggle event visibility
-router.post('/events/:id/toggle-visibility', (req, res) => {
+router.post('/:id/toggle-visibility', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
@@ -516,11 +591,11 @@ router.post('/events/:id/toggle-visibility', (req, res) => {
 });
 
 // Toggle scoring system
-router.post('/events/:id/toggle-scoring', (req, res) => {
+router.post('/:id/toggle-scoring', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
-    const userId = req.session.userId;
+    const userId = req.user.id;
 
     // Verify user is admin
     db.get(`
@@ -542,7 +617,7 @@ router.post('/events/:id/toggle-scoring', (req, res) => {
             WHERE id = ?
         `, [eventId], (err) => {
             if (err) {
-                console.error(err);
+                console.error('Error updating scoring system:', err);
                 return res.status(500).send('Error updating scoring system');
             }
             res.redirect(`/events/${eventId}`);
@@ -551,12 +626,65 @@ router.post('/events/:id/toggle-scoring', (req, res) => {
 });
 
 // Kick participant from event
-router.post('/events/:id/kick/:userId', async (req, res) => {
+router.post('/:id/kick/:userId', async (req, res) => {
+    // ... rest of the route handler ...
+});
+
+// Ban participant from event
+router.post('/:id/ban/:userId', async (req, res) => {
+    // ... rest of the route handler ...
+});
+
+// Unban participant from event
+router.post('/:id/unban/:userId', async (req, res) => {
+    // ... rest of the route handler ...
+});
+
+// Update event
+router.post('/:id/update', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
-    const userId = req.params.userId;
-    const adminId = req.session.userId;
+    const { name, description } = req.body;
+    const userId = req.user.id;
+
+    // Check if user is admin of the organization
+    db.get(`
+        SELECT 1 FROM organization_admins oa
+        JOIN events e ON e.organization_id = oa.organization_id
+        WHERE e.id = ? AND oa.user_id = ?
+    `, [eventId, userId], (err, isAdmin) => {
+        if (err) {
+            console.error('Error checking admin status:', err);
+            return res.status(500).send('Error checking admin status');
+        }
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can update events');
+        }
+
+        // Update event
+        db.run(`
+            UPDATE events
+            SET name = ?, description = ?
+            WHERE id = ?
+        `, [name, description, eventId], (err) => {
+            if (err) {
+                console.error('Error updating event:', err);
+                return res.status(500).send('Error updating event');
+            }
+
+            res.redirect(`/events/${eventId}`);
+        });
+    });
+});
+
+// Create new match route
+router.get('/:id/matches/new', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.session.userId;
 
     try {
         // Check if user is admin of the organization
@@ -565,30 +693,87 @@ router.post('/events/:id/kick/:userId', async (req, res) => {
                 SELECT 1 FROM organization_admins oa
                 JOIN events e ON e.organization_id = oa.organization_id
                 WHERE e.id = ? AND oa.user_id = ?
-            `, [eventId, adminId], (err, row) => {
-                if (err) reject(err);
-                resolve(!!row);
-            });
-        });
-
-        if (!isAdmin) {
-            return res.status(403).send('Unauthorized: Only organization admins can kick participants');
-        }
-
-        // Check if target user is the organization creator
-        const isCreator = await new Promise((resolve, reject) => {
-            db.get(`
-                SELECT 1 FROM organizations o
-                JOIN events e ON e.organization_id = o.id
-                WHERE e.id = ? AND o.created_by = ?
             `, [eventId, userId], (err, row) => {
                 if (err) reject(err);
                 resolve(!!row);
             });
         });
 
-        if (isCreator) {
-            return res.status(403).send('Cannot kick the organization creator');
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can create matches');
+        }
+
+        // Get event participants
+        const participants = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT u.id, u.username, pes.mmr
+                FROM users u
+                JOIN event_participants ep ON u.id = ep.user_id
+                LEFT JOIN player_event_stats pes ON pes.event_id = ep.event_id AND pes.user_id = u.id
+                WHERE ep.event_id = ?
+                ORDER BY u.username
+            `, [eventId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
+        res.render('new-match', { eventId, participants });
+    } catch (error) {
+        console.error('Error accessing new match form:', error);
+        res.status(500).send('Error accessing new match form');
+    }
+});
+
+// Create match route
+router.post('/:id/matches', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.session.userId;
+    
+    // Get all player IDs from the form
+    const playerIds = Object.entries(req.body)
+        .filter(([key]) => key.startsWith('player') && key.endsWith('_id'))
+        .map(([_, value]) => value);
+
+    // Validate input
+    if (playerIds.length < 2) {
+        return res.status(400).send('At least two players are required');
+    }
+
+    try {
+        // Check if user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can create matches');
+        }
+
+        // Verify players are event participants
+        const areParticipants = await new Promise((resolve, reject) => {
+            const placeholders = playerIds.map(() => '?').join(',');
+            db.get(`
+                SELECT COUNT(*) as count
+                FROM event_participants
+                WHERE event_id = ? AND user_id IN (${placeholders})
+            `, [eventId, ...playerIds], (err, row) => {
+                if (err) reject(err);
+                resolve(row.count === playerIds.length);
+            });
+        });
+
+        if (!areParticipants) {
+            return res.status(400).send('All players must be event participants');
         }
 
         // Start transaction
@@ -600,31 +785,31 @@ router.post('/events/:id/kick/:userId', async (req, res) => {
         });
 
         try {
-            // Mark participant's matches as forfeit
-            await new Promise((resolve, reject) => {
+            // Create match
+            const matchId = await new Promise((resolve, reject) => {
                 db.run(`
-                    UPDATE matches 
-                    SET status = 'forfeit'
-                    WHERE event_id = ? AND id IN (
-                        SELECT match_id FROM match_players 
-                        WHERE user_id = ?
-                    )
-                `, [eventId, userId], (err) => {
+                    INSERT INTO matches (event_id, status)
+                    VALUES (?, 'pending')
+                `, [eventId], function(err) {
                     if (err) reject(err);
-                    resolve();
+                    resolve(this.lastID);
                 });
             });
 
-            // Remove participant from event
-            await new Promise((resolve, reject) => {
-                db.run(`
-                    DELETE FROM event_participants 
-                    WHERE event_id = ? AND user_id = ?
-                `, [eventId, userId], (err) => {
-                    if (err) reject(err);
-                    resolve();
+            // Add players to match
+            const playerInserts = playerIds.map((playerId, index) => {
+                return new Promise((resolve, reject) => {
+                    db.run(`
+                        INSERT INTO match_players (match_id, user_id, position)
+                        VALUES (?, ?, ?)
+                    `, [matchId, playerId, index + 1], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
                 });
             });
+
+            await Promise.all(playerInserts);
 
             // Commit transaction
             await new Promise((resolve, reject) => {
@@ -644,111 +829,85 @@ router.post('/events/:id/kick/:userId', async (req, res) => {
         }
     } catch (err) {
         console.error(err);
-        res.status(500).send('Error kicking participant');
+        res.status(500).send('Error creating match');
     }
 });
 
-// Ban participant from event
-router.post('/events/:id/ban/:userId', async (req, res) => {
+// Submit match scores
+router.post('/:id/matches/:matchId/scores', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
-    const eventId = req.params.id;
-    const userId = req.params.userId;
-    const adminId = req.session.userId;
+    const matchId = req.params.matchId;
+    const userId = req.session.userId;
+    const scores = req.body.scores;
 
     try {
-        // Check if user is admin of the organization
-        const isAdmin = await new Promise((resolve, reject) => {
+        // Verify user is a player in the match
+        const isPlayer = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT 1 FROM organization_admins oa
-                JOIN events e ON e.organization_id = oa.organization_id
-                WHERE e.id = ? AND oa.user_id = ?
-            `, [eventId, adminId], (err, row) => {
+                SELECT 1 FROM match_players
+                WHERE match_id = ? AND user_id = ?
+            `, [matchId, userId], (err, row) => {
                 if (err) reject(err);
                 resolve(!!row);
             });
         });
 
-        if (!isAdmin) {
-            return res.status(403).send('Unauthorized: Only organization admins can ban participants');
+        if (!isPlayer) {
+            return res.status(403).send('Unauthorized: You are not a player in this match');
         }
 
-        // Check if target user is the organization creator
-        const isCreator = await new Promise((resolve, reject) => {
-            db.get(`
-                SELECT 1 FROM organizations o
-                JOIN events e ON e.organization_id = o.id
-                WHERE e.id = ? AND o.created_by = ?
-            `, [eventId, userId], (err, row) => {
-                if (err) reject(err);
-                resolve(!!row);
-            });
-        });
-
-        if (isCreator) {
-            return res.status(403).send('Cannot ban the organization creator');
-        }
-
-        // Add ban record
+        // Start transaction
         await new Promise((resolve, reject) => {
-            db.run(`
-                INSERT OR REPLACE INTO event_bans (event_id, user_id, status)
-                VALUES (?, ?, 'active')
-            `, [eventId, userId], (err) => {
+            db.run('BEGIN TRANSACTION', (err) => {
                 if (err) reject(err);
                 resolve();
             });
         });
 
-        res.redirect(`/events/${eventId}`);
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Error banning participant');
-    }
-});
-
-// Unban participant from event
-router.post('/events/:id/unban/:userId', async (req, res) => {
-    const requireLogin = req.app.locals.requireLogin;
-    const db = req.app.locals.db;
-    const eventId = req.params.id;
-    const userId = req.params.userId;
-    const adminId = req.session.userId;
-
-    try {
-        // Check if user is admin of the organization
-        const isAdmin = await new Promise((resolve, reject) => {
-            db.get(`
-                SELECT 1 FROM organization_admins oa
-                JOIN events e ON e.organization_id = oa.organization_id
-                WHERE e.id = ? AND oa.user_id = ?
-            `, [eventId, adminId], (err, row) => {
-                if (err) reject(err);
-                resolve(!!row);
+        try {
+            // Delete any existing submission by this user
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    DELETE FROM match_submissions
+                    WHERE match_id = ? AND user_id = ?
+                `, [matchId, userId], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
             });
-        });
 
-        if (!isAdmin) {
-            return res.status(403).send('Unauthorized: Only organization admins can unban participants');
+            // Create new submission
+            await new Promise((resolve, reject) => {
+                db.run(`
+                    INSERT INTO match_submissions (match_id, user_id, scores)
+                    VALUES (?, ?, ?)
+                `, [matchId, userId, JSON.stringify(scores)], (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/events/${req.params.id}/matches/${matchId}`);
+        } catch (err) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw err;
         }
-
-        // Update ban status to inactive
-        await new Promise((resolve, reject) => {
-            db.run(`
-                UPDATE event_bans
-                SET status = 'inactive'
-                WHERE event_id = ? AND user_id = ?
-            `, [eventId, userId], (err) => {
-                if (err) reject(err);
-                resolve();
-            });
-        });
-
-        res.redirect(`/events/${eventId}`);
     } catch (err) {
-        console.error(err);
-        res.status(500).send('Error unbanning participant');
+        console.error('Error submitting scores:', err);
+        res.status(500).send('Error submitting scores');
     }
 });
 
-module.exports = router; 
+module.exports = router;

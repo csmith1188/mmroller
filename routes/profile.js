@@ -3,7 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 
 // Profile routes
-router.get('/profile', async (req, res) => {
+router.get('/', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const userId = req.session.userId;

@@ -2,12 +2,12 @@ const express = require('express');
 const router = express.Router();
 
 // Organization routes
-router.get('/organizations/new', (req, res) => {
+router.get('/new', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     res.render('new-organization');
 });
 
-router.post('/organizations', (req, res) => {
+router.post('/', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const { name, description } = req.body;
@@ -79,7 +79,7 @@ router.post('/organizations', (req, res) => {
 });
 
 // Organization details route
-router.get('/organizations/:id', (req, res) => {
+router.get('/:id', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const orgId = req.params.id;
@@ -176,7 +176,7 @@ router.get('/organizations/:id', (req, res) => {
 });
 
 // Organization join route
-router.post('/organizations/:id/join', (req, res) => {
+router.post('/:id/join', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const orgId = req.params.id;
@@ -213,7 +213,7 @@ router.post('/organizations/:id/join', (req, res) => {
 });
 
 // Kick a user from an organization
-router.post('/organizations/:id/kick/:userId', async (req, res) => {
+router.post('/:id/kick/:userId', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const { id, userId } = req.params;
@@ -334,7 +334,7 @@ router.post('/organizations/:id/kick/:userId', async (req, res) => {
 });
 
 // Ban member from organization
-router.post('/organizations/:id/ban/:userId', async (req, res) => {
+router.post('/:id/ban/:userId', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const orgId = req.params.id;
@@ -441,7 +441,7 @@ router.post('/organizations/:id/ban/:userId', async (req, res) => {
 });
 
 // Unban member from organization
-router.post('/organizations/:id/unban/:userId', async (req, res) => {
+router.post('/:id/unban/:userId', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const orgId = req.params.id;
@@ -484,7 +484,7 @@ router.post('/organizations/:id/unban/:userId', async (req, res) => {
 });
 
 // Promote a user to admin
-router.post('/organizations/:id/promote/:userId', async (req, res) => {
+router.post('/:id/promote/:userId', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const { id, userId } = req.params;
@@ -563,7 +563,7 @@ router.post('/organizations/:id/promote/:userId', async (req, res) => {
 });
 
 // Remove admin status from a member
-router.post('/organizations/:id/remove-admin/:userId', async (req, res) => {
+router.post('/:id/remove-admin/:userId', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const { id, userId } = req.params;
@@ -622,7 +622,7 @@ router.post('/organizations/:id/remove-admin/:userId', async (req, res) => {
 });
 
 // List all organizations
-router.get('/organizations', (req, res) => {
+router.get('/', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const userId = req.session.userId;
@@ -738,7 +738,7 @@ router.get('/organizations', (req, res) => {
 });
 
 // Update organization
-router.post('/organizations/:id/update', async (req, res) => {
+router.post('/:id/update', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const { id } = req.params;
@@ -778,6 +778,133 @@ router.post('/organizations/:id/update', async (req, res) => {
     } catch (error) {
         console.error('Error updating organization:', error);
         res.status(500).send('Error updating organization');
+    }
+});
+
+// New event form for organization
+router.get('/:id/events/new', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const orgId = req.params.id;
+    const userId = req.user.id;
+
+    try {
+        // Check if user is an admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
+                [orgId, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can create events');
+        }
+
+        res.render('new-event', { organizationId: orgId });
+    } catch (error) {
+        console.error('Error accessing new event form:', error);
+        res.status(500).send('Error accessing new event form');
+    }
+});
+
+// Create new event within organization
+router.post('/:id/events', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const orgId = req.params.id;
+    const { name, description, start_date, end_date } = req.body;
+    const userId = req.session.userId;
+
+    if (!userId) {
+        return res.status(401).send('You must be logged in to create an event');
+    }
+
+    try {
+        // Check if user is an admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
+                [orgId, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can create events');
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            // Create event
+            const eventId = await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO events (name, description, organization_id, start_date, end_date) VALUES (?, ?, ?, ?, ?)',
+                    [name, description, orgId, start_date, end_date],
+                    function(err) {
+                        if (err) reject(err);
+                        resolve(this.lastID);
+                    }
+                );
+            });
+
+            // Add admin as participant
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO event_participants (event_id, user_id) VALUES (?, ?)',
+                    [eventId, userId],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            // Initialize admin's stats
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO player_event_stats (event_id, user_id, mmr) VALUES (?, ?, ?)',
+                    [eventId, userId, 1500],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/events/${eventId}`);
+        } catch (error) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error creating event:', error);
+        res.status(500).send('Error creating event');
     }
 });
 

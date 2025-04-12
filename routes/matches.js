@@ -599,24 +599,49 @@ router.post('/matches/:id/finalize', (req, res) => {
 });
 
 // Create new match route
-router.get('/events/:id/matches/new', (req, res) => {
+router.get('/events/:id/matches/new', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
-    
-    // Get event participants
-    db.all(`
-        SELECT u.id, u.username
-        FROM users u
-        JOIN event_participants ep ON u.id = ep.user_id
-        WHERE ep.event_id = ?
-    `, [eventId], (err, participants) => {
-        if (err) {
-            return res.status(500).send('Database error');
+    const userId = req.session.userId;
+
+    try {
+        // Check if user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can create matches');
         }
-        
+
+        // Get event participants
+        const participants = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT u.id, u.username, pes.mmr
+                FROM users u
+                JOIN event_participants ep ON u.id = ep.user_id
+                LEFT JOIN player_event_stats pes ON pes.event_id = ep.event_id AND pes.user_id = u.id
+                WHERE ep.event_id = ?
+                ORDER BY u.username
+            `, [eventId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
         res.render('new-match', { eventId, participants });
-    });
+    } catch (error) {
+        console.error('Error accessing new match form:', error);
+        res.status(500).send('Error accessing new match form');
+    }
 });
 
 router.post('/events/:id/matches', async (req, res) => {
