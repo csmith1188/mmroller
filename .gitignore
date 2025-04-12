@@ -22,4 +22,8 @@
 # Node.js related files
 node_modules/
 
+# Environment variables
+.env
+
+
 

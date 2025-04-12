@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
+const passport = require('passport');
 
 // Middleware to redirect logged-in users away from auth pages
 const redirectIfLoggedIn = (req, res, next) => {
@@ -39,8 +40,13 @@ router.post('/login', redirectIfLoggedIn, (req, res) => {
                 return res.render('login', { error: 'Invalid username or password' });
             }
             
-            req.session.userId = user.id;
-            res.redirect('/profile');
+            req.login(user, (err) => {
+                if (err) {
+                    console.error('Passport login error:', err);
+                    return res.render('login', { error: 'Error during login. Please try again.' });
+                }
+                res.redirect('/profile');
+            });
         });
     });
 });
@@ -81,8 +87,19 @@ router.post('/register', redirectIfLoggedIn, (req, res) => {
                     return res.render('register', { error: 'Error creating account. Please try again.' });
                 }
                 
-                req.session.userId = this.lastID;
-                res.redirect('/profile');
+                const newUser = {
+                    id: this.lastID,
+                    username: username,
+                    email: email
+                };
+                
+                req.login(newUser, (err) => {
+                    if (err) {
+                        console.error('Passport login error:', err);
+                        return res.render('register', { error: 'Error creating account. Please try again.' });
+                    }
+                    res.redirect('/profile');
+                });
             }
         );
     });
@@ -93,5 +110,17 @@ router.get('/logout', (req, res) => {
     req.session.destroy();
     res.redirect('/login');
 });
+
+// Discord OAuth routes
+router.get('/discord', passport.authenticate('discord'));
+
+router.get('/discord/callback', 
+    passport.authenticate('discord', { failureRedirect: '/login' }),
+    (req, res) => {
+        // Set session userId for compatibility
+        req.session.userId = req.user.id;
+        res.redirect('/profile');
+    }
+);
 
 module.exports = router; 

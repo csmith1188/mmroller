@@ -1,0 +1,41 @@
+/* Discord Button Styles */
+.btn-discord {
+    background-color: #5865F2;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 4px;
+    text-decoration: none;
+    display: inline-block;
+    transition: background-color 0.3s ease;
+}
+
+.btn-discord:hover {
+    background-color: #4752C4;
+    color: white;
+}
+
+/* Divider Styles */
+.divider {
+    position: relative;
+    text-align: center;
+    margin: 1.5rem 0;
+}
+
+.divider p {
+    background: white;
+    padding: 0 10px;
+    position: relative;
+    z-index: 1;
+    margin: 0;
+}
+
+.divider::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background-color: #dee2e6;
+    z-index: 0;
+} 
