@@ -12,11 +12,8 @@ CREATE TABLE IF NOT EXISTS organizations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     description TEXT,
-    admin_id INTEGER NOT NULL,
-    created_by INTEGER NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (admin_id) REFERENCES users(id),
-    FOREIGN KEY (created_by) REFERENCES users(id)
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Organization members table

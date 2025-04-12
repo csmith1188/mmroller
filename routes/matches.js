@@ -209,10 +209,12 @@ router.get('/matches/:id', (req, res) => {
     // Get match details with players and event info
     db.get(`
         SELECT m.*, e.name as event_name, e.organization_id,
-               CASE WHEN o.admin_id = ? THEN 1 ELSE 0 END as is_admin
+               CASE WHEN EXISTS (
+                   SELECT 1 FROM organization_admins oa
+                   WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+               ) THEN 1 ELSE 0 END as is_admin
         FROM matches m
         JOIN events e ON m.event_id = e.id
-        JOIN organizations o ON e.organization_id = o.id
         WHERE m.id = ?
     `, [userId, matchId], (err, match) => {
         if (err) {
@@ -423,11 +425,13 @@ router.post('/matches/:id/status', (req, res) => {
     
     // Verify user is admin and get match details
     db.get(`
-        SELECT m.*, e.id as event_id, o.admin_id
+        SELECT m.*, e.id as event_id, e.organization_id
         FROM matches m
         JOIN events e ON m.event_id = e.id
-        JOIN organizations o ON e.organization_id = o.id
-        WHERE m.id = ? AND o.admin_id = ?
+        WHERE m.id = ? AND EXISTS (
+            SELECT 1 FROM organization_admins oa
+            WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+        )
     `, [matchId, userId], async (err, match) => {
         if (err || !match) {
             return res.status(403).send('Unauthorized');
@@ -497,11 +501,13 @@ router.post('/matches/:id/finalize', (req, res) => {
     
     // Verify user is admin
     db.get(`
-        SELECT m.*, e.id as event_id, o.admin_id 
+        SELECT m.*, e.id as event_id, e.organization_id
         FROM matches m
         JOIN events e ON m.event_id = e.id
-        JOIN organizations o ON e.organization_id = o.id
-        WHERE m.id = ? AND o.admin_id = ?
+        WHERE m.id = ? AND EXISTS (
+            SELECT 1 FROM organization_admins oa
+            WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+        )
     `, [matchId, userId], async (err, match) => {
         if (err || !match) {
             return res.status(403).send('Unauthorized');
@@ -613,62 +619,111 @@ router.get('/events/:id/matches/new', (req, res) => {
     });
 });
 
-router.post('/events/:id/matches', (req, res) => {
+router.post('/events/:id/matches', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
-    const playerIds = req.body.player_ids; // Array of player IDs in order
     const userId = req.session.userId;
     
-    // Verify user is admin of the organization that owns the event
-    db.get(`
-        SELECT 1 FROM events e
-        JOIN organizations o ON e.organization_id = o.id
-        WHERE e.id = ? AND o.admin_id = ?
-    `, [eventId, userId], (err, result) => {
-        if (err || !result) {
-            return res.status(403).send('Unauthorized: Only organization admins can create matches');
-        }
-        
-        // Verify all players are event participants
-        db.get(`
-            SELECT COUNT(DISTINCT user_id) as count
-            FROM event_participants
-            WHERE event_id = ? AND user_id IN (${playerIds.map(() => '?').join(',')})
-        `, [eventId, ...playerIds], (err, result) => {
-            if (err || result.count !== playerIds.length) {
-                return res.status(400).send('Invalid players: All players must be event participants');
-            }
-            
-            // Create match
-            db.run(`
-                INSERT INTO matches (event_id)
-                VALUES (?)
-            `, [eventId], function(err) {
-                if (err) {
-                    return res.status(500).send('Error creating match');
-                }
-                
-                const matchId = this.lastID;
-                
-                // Add players to match
-                const playerValues = playerIds.map((playerId, index) => 
-                    `(${matchId}, ${playerId}, ${index + 1})`
-                ).join(',');
-                
-                db.run(`
-                    INSERT INTO match_players (match_id, user_id, position)
-                    VALUES ${playerValues}
-                `, function(err) {
-                    if (err) {
-                        return res.status(500).send('Error adding players to match');
-                    }
-                    
-                    res.redirect(`/events/${eventId}`);
-                });
+    // Get all player IDs from the form
+    const playerIds = Object.entries(req.body)
+        .filter(([key]) => key.startsWith('player') && key.endsWith('_id'))
+        .map(([_, value]) => value);
+
+    // Validate input
+    if (playerIds.length < 2) {
+        return res.status(400).send('At least two players are required');
+    }
+
+    try {
+        // Check if user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
             });
         });
-    });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can create matches');
+        }
+
+        // Verify players are event participants
+        const areParticipants = await new Promise((resolve, reject) => {
+            const placeholders = playerIds.map(() => '?').join(',');
+            db.get(`
+                SELECT COUNT(*) as count
+                FROM event_participants
+                WHERE event_id = ? AND user_id IN (${placeholders})
+            `, [eventId, ...playerIds], (err, row) => {
+                if (err) reject(err);
+                resolve(row.count === playerIds.length);
+            });
+        });
+
+        if (!areParticipants) {
+            return res.status(400).send('All players must be event participants');
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            // Create match
+            const matchId = await new Promise((resolve, reject) => {
+                db.run(`
+                    INSERT INTO matches (event_id, status)
+                    VALUES (?, 'pending')
+                `, [eventId], function(err) {
+                    if (err) reject(err);
+                    resolve(this.lastID);
+                });
+            });
+
+            // Add players to match
+            const playerInserts = playerIds.map((playerId, index) => {
+                return new Promise((resolve, reject) => {
+                    db.run(`
+                        INSERT INTO match_players (match_id, user_id, position)
+                        VALUES (?, ?, ?)
+                    `, [matchId, playerId, index + 1], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+            });
+
+            await Promise.all(playerInserts);
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/events/${eventId}`);
+        } catch (err) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw err;
+        }
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('Error creating match');
+    }
 });
 
 module.exports = router; 

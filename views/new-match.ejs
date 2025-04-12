@@ -76,8 +76,8 @@
                     <div class="input-group">
                         <span class="input-group-text">Player ${playerCount + 1}</span>
                         <div class="search-container flex-grow-1">
-                            <input type="text" class="form-control" id="${playerId}_search" name="player_search[]" placeholder="Search for player..." autocomplete="off">
-                            <input type="hidden" id="${playerId}_id" name="player_ids[]">
+                            <input type="text" class="form-control" id="${playerId}_search" name="player${playerCount + 1}_search" placeholder="Search for player..." autocomplete="off">
+                            <input type="hidden" id="${playerId}_id" name="player${playerCount + 1}_id">
                             <div class="search-results" id="${playerId}_results"></div>
                         </div>
                         <button type="button" class="btn btn-outline-danger remove-player" data-player-id="${playerCount}">

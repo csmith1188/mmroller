@@ -323,11 +323,14 @@ router.post('/events/:id/reject/:userId', (req, res) => {
 
     // Verify user is admin of the organization
     db.get(`
-        SELECT 1 FROM events e
-        JOIN organizations o ON e.organization_id = o.id
-        WHERE e.id = ? AND o.admin_id = ?
-    `, [eventId, currentUserId], (err, isAdmin) => {
-        if (err || !isAdmin) {
+        SELECT e.*, e.organization_id
+        FROM events e
+        WHERE e.id = ? AND EXISTS (
+            SELECT 1 FROM organization_admins oa
+            WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+        )
+    `, [eventId, currentUserId], (err, event) => {
+        if (err || !event) {
             return res.status(403).send('Unauthorized');
         }
 
@@ -485,11 +488,14 @@ router.post('/events/:id/toggle-visibility', (req, res) => {
 
     // Verify user is admin of the organization
     db.get(`
-        SELECT 1 FROM events e
-        JOIN organizations o ON e.organization_id = o.id
-        WHERE e.id = ? AND o.admin_id = ?
-    `, [eventId, userId], (err, isAdmin) => {
-        if (err || !isAdmin) {
+        SELECT e.*, e.organization_id
+        FROM events e
+        WHERE e.id = ? AND EXISTS (
+            SELECT 1 FROM organization_admins oa
+            WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+        )
+    `, [eventId, userId], (err, event) => {
+        if (err || !event) {
             return res.status(403).send('Unauthorized');
         }
 
@@ -518,10 +524,12 @@ router.post('/events/:id/toggle-scoring', (req, res) => {
 
     // Verify user is admin
     db.get(`
-        SELECT e.*, o.admin_id 
+        SELECT e.*, e.organization_id
         FROM events e
-        JOIN organizations o ON e.organization_id = o.id
-        WHERE e.id = ? AND o.admin_id = ?
+        WHERE e.id = ? AND EXISTS (
+            SELECT 1 FROM organization_admins oa
+            WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+        )
     `, [eventId, userId], (err, event) => {
         if (err || !event) {
             return res.status(403).send('Unauthorized');
