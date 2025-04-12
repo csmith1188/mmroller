@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS events (
     end_date DATETIME,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     hidden INTEGER DEFAULT 0,
+    lowest_score_wins INTEGER DEFAULT 0,
     FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
 

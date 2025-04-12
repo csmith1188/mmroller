@@ -73,16 +73,18 @@ app.use((req, res, next) => {
 });
 
 // Routes
-app.get('/', (req, res) => {
-    res.redirect('/login');
+// Use auth routes first - these should be accessible without login
+app.use('/', authRoutes);
+
+// Protected routes - require login
+app.get('/', requireLogin, (req, res) => {
+    res.redirect('/profile');
 });
 
-// Use route files
-app.use('/', authRoutes);
-app.use('/', profileRoutes);
-app.use('/', organizationRoutes);
-app.use('/', eventRoutes);
-app.use('/', matchRoutes);
+app.use('/', requireLogin, profileRoutes);
+app.use('/', requireLogin, organizationRoutes);
+app.use('/', requireLogin, eventRoutes);
+app.use('/', requireLogin, matchRoutes);
 
 // Start server
 app.listen(port, () => {

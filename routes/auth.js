@@ -2,12 +2,20 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 
+// Middleware to redirect logged-in users away from auth pages
+const redirectIfLoggedIn = (req, res, next) => {
+    if (req.session.userId) {
+        return res.redirect('/profile');
+    }
+    next();
+};
+
 // Login routes
-router.get('/login', (req, res) => {
+router.get('/login', redirectIfLoggedIn, (req, res) => {
     res.render('login', { error: null });
 });
 
-router.post('/login', (req, res) => {
+router.post('/login', redirectIfLoggedIn, (req, res) => {
     const { username, password } = req.body;
     const db = req.app.locals.db;
     
@@ -38,11 +46,11 @@ router.post('/login', (req, res) => {
 });
 
 // Register routes
-router.get('/register', (req, res) => {
+router.get('/register', redirectIfLoggedIn, (req, res) => {
     res.render('register');
 });
 
-router.post('/register', (req, res) => {
+router.post('/register', redirectIfLoggedIn, (req, res) => {
     const { username, password, email } = req.body;
     const db = req.app.locals.db;
     

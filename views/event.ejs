@@ -98,7 +98,7 @@
         </div>
         
         <div class="col-md-4">
-            <div class="card">
+            <div class="card mb-4">
                 <div class="card-header">
                     <h5 class="mb-0">Event Details</h5>
                 </div>
@@ -124,6 +124,23 @@
                                 <%= event.hidden ? 'Show Event' : 'Hide Event' %>
                             </button>
                         </form>
+
+                        <div class="mb-3">
+                            <div class="mb-2">
+                                <strong>Scoring System:</strong>
+                                <span class="badge bg-info"><%= event.lowest_score_wins ? 'Lowest Score Wins' : 'Highest Score Wins' %></span>
+                            </div>
+                            <form action="/events/<%= event.id %>/toggle-scoring" method="POST">
+                                <button type="submit" class="btn btn-outline-primary btn-sm">
+                                    Switch to <%= event.lowest_score_wins ? 'Highest' : 'Lowest' %> Score Wins
+                                </button>
+                            </form>
+                        </div>
+                    <% } else { %>
+                        <div class="mb-3">
+                            <strong>Scoring System:</strong>
+                            <span class="badge bg-info"><%= event.lowest_score_wins ? 'Lowest Score Wins' : 'Highest Score Wins' %></span>
+                        </div>
                     <% } %>
                     
                     <% if (!event.is_participant) { %>

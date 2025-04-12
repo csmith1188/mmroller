@@ -389,4 +389,37 @@ router.post('/events/:id/toggle-visibility', (req, res) => {
     });
 });
 
+// Toggle scoring system
+router.post('/events/:id/toggle-scoring', (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.session.userId;
+
+    // Verify user is admin
+    db.get(`
+        SELECT e.*, o.admin_id 
+        FROM events e
+        JOIN organizations o ON e.organization_id = o.id
+        WHERE e.id = ? AND o.admin_id = ?
+    `, [eventId, userId], (err, event) => {
+        if (err || !event) {
+            return res.status(403).send('Unauthorized');
+        }
+
+        // Toggle the lowest_score_wins value
+        db.run(`
+            UPDATE events
+            SET lowest_score_wins = CASE WHEN lowest_score_wins = 0 THEN 1 ELSE 0 END
+            WHERE id = ?
+        `, [eventId], (err) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).send('Error updating scoring system');
+            }
+            res.redirect(`/events/${eventId}`);
+        });
+    });
+});
+
 module.exports = router; 

@@ -18,3 +18,8 @@
 *.mdb
 *.ldb
 *.dbf 
+
+# Node.js related files
+node_modules/
+
+
