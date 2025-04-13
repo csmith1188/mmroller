@@ -5,26 +5,13 @@
         <div class="col-md-8">
             <div class="card">
                 <div class="card-header">
-                    <% if (isAdmin) { %>
-                        <form action="/events/<%= event.id %>/update" method="POST">
-                            <div class="mb-3">
-                                <input type="text" class="form-control form-control-lg" name="name" value="<%= event.name %>" required>
-                            </div>
-                    <% } else { %>
-                        <h1 class="h4 mb-0"><%= event.name %></h1>
-                    <% } %>
+                    <h1 class="h4 mb-0"><%= event.name %></h1>
                 </div>
                 <div class="card-body">
                     <p class="text-muted">
                         Organization: <a href="/organizations/<%= event.organization_id %>"><%= event.organization_name %></a>
                     </p>
-                    <% if (isAdmin) { %>
-                        <div class="mb-3">
-                            <textarea class="form-control" name="description" rows="3"><%= event.description || '' %></textarea>
-                        </div>
-                        <button type="submit" class="btn btn-primary">Save Changes</button>
-                        </form>
-                    <% } else if (event.description) { %>
+                    <% if (event.description) { %>
                         <p><%= event.description %></p>
                     <% } %>
                     
@@ -172,7 +159,7 @@
                     <% } else { %>
                         <div class="list-group">
                             <% matches.forEach(match => { %>
-                                <a href="/events/<%= event.id %>/matches/<%= match.id %>" class="list-group-item list-group-item-action">
+                                <a href="/matches/<%= match.id %>" class="list-group-item list-group-item-action">
                                     <div class="d-flex justify-content-between align-items-center">
                                         <div>
                                             <h6 class="mb-1">Match #<%= match.id %></h6>

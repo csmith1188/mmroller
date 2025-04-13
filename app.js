@@ -16,6 +16,7 @@ const authRoutes = require('./routes/auth');
 const profileRoutes = require('./routes/profile');
 const organizationRoutes = require('./routes/organizations');
 const eventRoutes = require('./routes/events');
+const matchRoutes = require('./routes/matches');
 
 // Database setup
 const dbPath = path.join(__dirname, 'database', 'database.db');
@@ -168,12 +169,10 @@ app.get('/', requireLogin, (req, res) => {
     res.redirect('/profile');
 });
 
-// Profile routes - handle both /profile and /profile/:id
-app.use('/profile', requireLogin, profileRoutes);
-
-// Other protected routes
-app.use('/organizations', requireLogin, organizationRoutes);
-app.use('/events', requireLogin, eventRoutes);
+app.use('/', requireLogin, profileRoutes);
+app.use('/', requireLogin, organizationRoutes);
+app.use('/', requireLogin, eventRoutes);
+app.use('/', requireLogin, matchRoutes);
 
 // Start server
 app.listen(port, () => {

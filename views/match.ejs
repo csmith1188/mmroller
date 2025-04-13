@@ -125,24 +125,25 @@
                                         <button type="submit" class="btn btn-primary">Update Status</button>
                                     </form>
 
-                                    <% if (match.status !== 'completed' && match.submissions && match.submissions.length > 0) { %>
+                                    <% if (match.status !== 'completed' && submissions && submissions.length > 0) { %>
                                         <h6>Player Submissions</h6>
                                         <div class="list-group mb-3">
-                                            <% match.submissions.forEach(submission => { %>
+                                            <% submissions.forEach(submission => { %>
                                                 <div class="list-group-item">
                                                     <div class="d-flex justify-content-between align-items-center">
                                                         <div>
-                                                            <h6 class="mb-1"><%= submission.username %></h6>
-                                                            <small class="text-muted">
-                                                                Submitted: <%= new Date(submission.submitted_at).toLocaleString() %>
-                                                            </small>
+                                                            <strong><%= submission.username %></strong>
+                                                            <div class="mt-2">
+                                                                <% match.players.forEach((player, index) => { %>
+                                                                    <p class="mb-1"><%= player.username %>: <%= submission.scores[index] %></p>
+                                                                <% }); %>
+                                                            </div>
+                                                            <small class="text-muted">Submitted on: <%= new Date(submission.submitted_at).toLocaleString() %></small>
                                                         </div>
-                                                        <% if (isAdmin) { %>
-                                                            <form action="/matches/<%= match.id %>/finalize" method="POST" class="d-inline">
-                                                                <input type="hidden" name="submission_id" value="<%= submission.id %>">
-                                                                <button type="submit" class="btn btn-sm btn-success">Accept</button>
-                                                            </form>
-                                                        <% } %>
+                                                        <form action="/matches/<%= match.id %>/finalize" method="POST" class="d-inline">
+                                                            <input type="hidden" name="submission_id" value="<%= submission.id %>">
+                                                            <button type="submit" class="btn btn-success btn-sm">Accept Submission</button>
+                                                        </form>
                                                     </div>
                                                 </div>
                                             <% }); %>
