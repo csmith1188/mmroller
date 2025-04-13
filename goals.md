@@ -2,6 +2,7 @@
 - org privacy toggle
 - only org members apply to events
 - orgs in your profile even when banned
+- does banning from orgs kick from events, making them ununbannable?
 - forfeit kicked/banned handling
 - icons for actions/discord/etc
 - Teams
