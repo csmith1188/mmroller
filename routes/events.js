@@ -92,7 +92,7 @@ router.get('/events/:id', (req, res) => {
                     // Get event matches with player information
                     db.all(`
                         SELECT m.*, 
-                               GROUP_CONCAT(u.username) as player_names,
+                               GROUP_CONCAT(COALESCE(u.username, u.discordname)) as player_names,
                                GROUP_CONCAT(u.id) as player_ids,
                                GROUP_CONCAT(mp.position) as positions,
                                GROUP_CONCAT(mp.final_score) as final_scores
@@ -463,17 +463,28 @@ router.get('/events/:id/search-players', (req, res) => {
     
     // Search for participants in the event
     db.all(`
-        SELECT u.id, u.username
+        SELECT 
+            u.id, 
+            COALESCE(u.username, u.discordname) as display_name
         FROM users u
         JOIN event_participants ep ON u.id = ep.user_id
-        WHERE ep.event_id = ? AND u.username LIKE ?
-        ORDER BY u.username
+        WHERE ep.event_id = ? 
+        AND (
+            (u.username LIKE ? AND u.username IS NOT NULL)
+            OR 
+            (u.discordname LIKE ? AND u.discordname IS NOT NULL)
+        )
+        ORDER BY COALESCE(u.username, u.discordname)
         LIMIT 10
-    `, [eventId, `%${query}%`], (err, players) => {
+    `, [eventId, `%${query}%`, `%${query}%`], (err, players) => {
         if (err) {
-            console.error(err);
+            console.error('Search error:', err);
             return res.status(500).send('Error searching players');
         }
+        
+        // Log the search results for debugging
+        console.log('Search query:', query);
+        console.log('Players found:', players);
         
         res.json(players);
     });
