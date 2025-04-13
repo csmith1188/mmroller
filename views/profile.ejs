@@ -42,8 +42,7 @@
                                                     <span class="badge bg-primary">Admin</span>
                                                 <% } %>
                                             </div>
-                                            <p class="mb-1"><%= org.description %></p>
-                                            <small>Created on <%= new Date(org.created_at).toLocaleDateString() %></small>
+                                            <p class="mb-1"><%- org.description %></p>
                                         </a>
                                     <% }); %>
                                 </div>
@@ -68,9 +67,6 @@
                                                 </div>
                                             </div>
                                             <div class="d-flex justify-content-between align-items-center mt-2">
-                                                <div class="small text-muted">
-                                                    Created on <%= new Date(event.created_at).toLocaleDateString() %>
-                                                </div>
                                                 <div class="text-muted">
                                                     <span class="me-2">Matches: <%= event.matches_played %></span>
                                                     <span class="me-2 text-success">W: <%= event.wins %></span>

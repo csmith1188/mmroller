@@ -1,5 +1,4 @@
 - submission fields are reversed ?? can't replicate
-- org/event description formatting (and character limited preview)
 - org privacy toggle
 - only org members apply to events
 - error message templates
@@ -7,6 +6,6 @@
 - icons for actions/discord/etc
 - Teams
 - Custom fields (org, event, player, match)
-- Email verifaction and password change
+- Email verification and password change
 - Tournaments
 - stylesheet

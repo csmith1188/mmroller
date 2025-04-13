@@ -2,6 +2,41 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 
+function formatDescription(description) {
+    if (!description) return '';
+    
+    // Remove all \r characters
+    let formatted = description.replace(/\r/g, '');
+    
+    // Replace \n with <br>
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Replace multiple consecutive <br> with a maximum of two
+    formatted = formatted.replace(/(<br>){3,}/g, '<br><br>');
+    
+    // Truncate to 128 characters and add ellipsis if needed
+    if (formatted.length > 128) {
+        formatted = formatted.substring(0, 128).trim() + '...';
+    }
+    
+    return formatted;
+}
+
+function formatDescriptionNoTruncate(description) {
+    if (!description) return '';
+    
+    // Remove all \r characters
+    let formatted = description.replace(/\r/g, '');
+    
+    // Replace \n with <br>
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Replace multiple consecutive <br> with a maximum of two
+    formatted = formatted.replace(/(<br>){3,}/g, '<br><br>');
+    
+    return formatted;
+}
+
 // Profile routes
 router.get('/profile', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
@@ -13,34 +48,40 @@ router.get('/profile', async (req, res) => {
     }
 
     try {
-        // Get user info
+        // Get user details
         const user = await new Promise((resolve, reject) => {
-            db.get('SELECT id, COALESCE(username, discordname) as display_name, email, password_hash IS NOT NULL as has_password FROM users WHERE id = ?', [userId], (err, row) => {
+            db.get(`
+                SELECT id, username, discordname, created_at,
+                       COALESCE(discordname, username) as display_name
+                FROM users
+                WHERE id = ?
+            `, [userId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
         });
 
-        if (!user) {
-            return res.status(404).send('User not found');
-        }
-
         // Get user's organizations
         const organizations = await new Promise((resolve, reject) => {
             db.all(`
-                SELECT o.*, 
+                SELECT o.*,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_admins 
                            WHERE organization_id = o.id AND user_id = ?
-                       ) THEN 1 ELSE 0 END as is_admin,
-                       CASE WHEN o.created_by = ? THEN 1 ELSE 0 END as is_creator
+                       ) THEN 1 ELSE 0 END as is_admin
                 FROM organizations o
                 JOIN organization_members om ON o.id = om.organization_id
                 WHERE om.user_id = ?
-            `, [userId, userId, userId], (err, rows) => {
+                ORDER BY o.created_at DESC
+            `, [userId, userId], (err, rows) => {
                 if (err) reject(err);
                 resolve(rows);
             });
+        });
+
+        // Format organization descriptions
+        organizations.forEach(org => {
+            org.description = formatDescription(org.description);
         });
 
         // Get user's events with stats
@@ -63,6 +104,11 @@ router.get('/profile', async (req, res) => {
                 if (err) reject(err);
                 resolve(rows);
             });
+        });
+
+        // Format event descriptions
+        events.forEach(event => {
+            event.description = formatDescription(event.description);
         });
 
         res.render('profile', {
@@ -170,7 +216,12 @@ router.get('/profile/:id', async (req, res) => {
     try {
         // Get user details
         const user = await new Promise((resolve, reject) => {
-            db.get('SELECT *, COALESCE(username, discordname) as display_name, discord_id IS NOT NULL as is_discord_user FROM users WHERE id = ?', [profileId], (err, row) => {
+            db.get(`
+                SELECT id, username, discordname, created_at,
+                       COALESCE(discordname, username) as display_name
+                FROM users
+                WHERE id = ?
+            `, [profileId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -180,15 +231,14 @@ router.get('/profile/:id', async (req, res) => {
             return res.status(404).send('User not found');
         }
 
-        // Get user's organizations (excluding banned ones)
+        // Get user's organizations
         const organizations = await new Promise((resolve, reject) => {
             db.all(`
                 SELECT o.*,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_admins 
                            WHERE organization_id = o.id AND user_id = ?
-                       ) THEN 1 ELSE 0 END as is_admin,
-                       CASE WHEN o.created_by = ? THEN 1 ELSE 0 END as is_creator
+                       ) THEN 1 ELSE 0 END as is_admin
                 FROM organizations o
                 JOIN organization_members om ON o.id = om.organization_id
                 WHERE om.user_id = ?
@@ -196,11 +246,16 @@ router.get('/profile/:id', async (req, res) => {
                     SELECT 1 FROM organization_bans 
                     WHERE organization_id = o.id AND user_id = ? AND status = 'active'
                 )
-                ORDER BY o.name
-            `, [profileId, profileId, profileId, profileId], (err, rows) => {
+                ORDER BY o.created_at DESC
+            `, [userId, profileId, userId], (err, rows) => {
                 if (err) reject(err);
                 resolve(rows);
             });
+        });
+
+        // Format organization descriptions
+        organizations.forEach(org => {
+            org.description = formatDescription(org.description);
         });
 
         // Get user's events (excluding banned ones)
@@ -226,7 +281,7 @@ router.get('/profile/:id', async (req, res) => {
                     WHERE organization_id = o.id AND user_id = ? AND status = 'active'
                 )
                 ORDER BY e.start_date DESC
-            `, [profileId, profileId, profileId, profileId, profileId], (err, rows) => {
+            `, [userId, profileId, profileId, profileId, profileId], (err, rows) => {
                 if (err) reject(err);
                 resolve(rows.map(event => ({
                     ...event,
@@ -236,6 +291,11 @@ router.get('/profile/:id', async (req, res) => {
                     losses: event.losses || 0
                 })));
             });
+        });
+
+        // Format event descriptions
+        events.forEach(event => {
+            event.description = formatDescription(event.description);
         });
 
         // Get user's match history
