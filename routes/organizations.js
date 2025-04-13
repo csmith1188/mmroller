@@ -142,8 +142,6 @@ router.get('/organizations/:id', (req, res) => {
             organization.description : 
             formatDescriptionNoTruncate(organization.description);
 
-        console.log(organization);
-
         // Check if user is banned from the organization
         db.get(`
             SELECT 1 FROM organization_bans
@@ -713,8 +711,6 @@ router.get('/organizations', (req, res) => {
             org.description = formatDescription(org.description);
         });
 
-        console.log(userOrgs);
-
         // Get total count of user's organizations for pagination
         db.get(`
             SELECT COUNT(DISTINCT o.id) as count
@@ -761,8 +757,6 @@ router.get('/organizations', (req, res) => {
                 otherOrgs.forEach(org => {
                     org.description = formatDescription(org.description);
                 });
-
-                console.log(otherOrgs);
 
                 // Get total count of other organizations for pagination
                 db.get(`
