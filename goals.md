@@ -1,10 +1,10 @@
-- admins can't submit their own results
-- submission fields are reversed
+- submission fields are reversed ?? can't replicate
 - org/event description formatting (and character limited preview)
 - org privacy toggle
 - only org members apply to events
 - error message templates
 - forfeit kicked/banned handling
+- icons for actions/discord/etc
 - Teams
 - Custom fields (org, event, player, match)
 - Email verifaction and password change

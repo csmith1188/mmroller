@@ -11,13 +11,13 @@
     <%- include('partials/header', { title: 'Match Details' }) %>
 
     <div class="container mt-4">
-        <div class="card">
-            <div class="card-header">
-                <h1 class="h4 mb-0">Match Details</h1>
-            </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-8">
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h1 class="h4 mb-0">Match Details</h1>
+                    </div>
+                    <div class="card-body">
                         <% if (match.status === 'completed' && (match.is_player || match.is_admin === 1)) { %>
                             <div class="card mb-4">
                                 <div class="card-header bg-success text-white">
@@ -73,7 +73,7 @@
                         </div>
 
                         <% if (match.status !== 'completed') { %>
-                            <% if (match.is_player) { %>
+                            <% if (match.is_player || match.is_admin === 1) { %>
                                 <div class="card mb-4">
                                     <div class="card-header">
                                         <h5 class="mb-0">Submit Match Results</h5>
@@ -171,35 +171,35 @@
                             </div>
                         <% } %>
                     </div>
+                </div>
+            </div>
 
-                    <div class="col-md-4">
-                        <div class="card">
-                            <div class="card-header">
-                                <h5 class="mb-0">Match Info</h5>
-                            </div>
-                            <div class="card-body">
-                                <p>
-                                    <strong>Status:</strong>
-                                    <span class="badge bg-<%= match.status === 'completed' ? 'success' : (match.status === 'forfeit' ? 'danger' : 'warning') %>">
-                                        <%= match.status %>
-                                    </span>
-                                </p>
-                                <p>
-                                    <strong>Event:</strong>
-                                    <a href="/events/<%= match.event_id %>"><%= match.event_name %></a>
-                                </p>
-                                <p>
-                                    <strong>Created:</strong>
-                                    <%= new Date(match.created_at).toLocaleDateString() %>
-                                </p>
-                                <% if (match.status === 'completed') { %>
-                                    <p>
-                                        <strong>Completed:</strong>
-                                        <%= new Date(match.completed_at).toLocaleDateString() %>
-                                    </p>
-                                <% } %>
-                            </div>
-                        </div>
+            <div class="col-md-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Match Info</h5>
+                    </div>
+                    <div class="card-body">
+                        <p>
+                            <strong>Status:</strong>
+                            <span class="badge bg-<%= match.status === 'completed' ? 'success' : (match.status === 'forfeit' ? 'danger' : 'warning') %>">
+                                <%= match.status %>
+                            </span>
+                        </p>
+                        <p>
+                            <strong>Event:</strong>
+                            <a href="/events/<%= match.event_id %>"><%= match.event_name %></a>
+                        </p>
+                        <p>
+                            <strong>Created:</strong>
+                            <%= new Date(match.created_at).toLocaleDateString() %>
+                        </p>
+                        <% if (match.status === 'completed') { %>
+                            <p>
+                                <strong>Completed:</strong>
+                                <%= new Date(match.completed_at).toLocaleDateString() %>
+                            </p>
+                        <% } %>
                     </div>
                 </div>
             </div>

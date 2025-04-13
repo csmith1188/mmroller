@@ -293,120 +293,143 @@ router.post('/matches/:id/scores', (req, res) => {
     const userId = req.session.userId;
     const scores = req.body.scores;
     
-    // Start transaction
-    db.run('BEGIN TRANSACTION', (err) => {
+    // Check if user is a player in the match or an admin
+    db.get(`
+        SELECT 
+            CASE WHEN EXISTS (
+                SELECT 1 FROM match_players WHERE match_id = ? AND user_id = ?
+            ) THEN 1 ELSE 0 END as is_player,
+            CASE WHEN EXISTS (
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                JOIN matches m ON m.event_id = e.id
+                WHERE m.id = ? AND oa.user_id = ?
+            ) THEN 1 ELSE 0 END as is_admin
+    `, [matchId, userId, matchId, userId], (err, result) => {
         if (err) {
             console.error(err);
-            return res.status(500).send('Error starting transaction');
+            return res.status(500).send('Error checking user permissions');
         }
         
-        // Get match players first
-        db.all(`
-            SELECT user_id
-            FROM match_players
-            WHERE match_id = ?
-        `, [matchId], (err, players) => {
+        if (!result.is_player && !result.is_admin) {
+            return res.status(403).send('Only players in the match or organization admins can submit scores');
+        }
+        
+        // Start transaction
+        db.run('BEGIN TRANSACTION', (err) => {
             if (err) {
-                db.run('ROLLBACK');
                 console.error(err);
-                return res.status(500).send('Error fetching match players');
+                return res.status(500).send('Error starting transaction');
             }
             
-            // Delete previous submissions from this user
-            db.run(`
-                DELETE FROM match_submissions
-                WHERE match_id = ? AND user_id = ?
-            `, [matchId, userId], (err) => {
+            // Get match players first
+            db.all(`
+                SELECT user_id
+                FROM match_players
+                WHERE match_id = ?
+            `, [matchId], (err, players) => {
                 if (err) {
                     db.run('ROLLBACK');
                     console.error(err);
-                    return res.status(500).send('Error deleting previous submissions');
+                    return res.status(500).send('Error fetching match players');
                 }
                 
-                // Insert submission
+                // Delete previous submissions from this user
                 db.run(`
-                    INSERT INTO match_submissions (match_id, user_id, scores, submitted_at)
-                    VALUES (?, ?, ?, datetime('now'))
-                `, [matchId, userId, JSON.stringify(scores)], (err) => {
+                    DELETE FROM match_submissions
+                    WHERE match_id = ? AND user_id = ?
+                `, [matchId, userId], (err) => {
                     if (err) {
                         db.run('ROLLBACK');
                         console.error(err);
-                        return res.status(500).send('Error submitting scores');
+                        return res.status(500).send('Error deleting previous submissions');
                     }
                     
-                    // Check if all players have submitted the same scores
-                    db.all(`
-                        SELECT scores
-                        FROM match_submissions
-                        WHERE match_id = ?
-                        ORDER BY submitted_at DESC
-                        LIMIT ?
-                    `, [matchId, players.length], (err, recentSubmissions) => {
+                    // Insert submission
+                    db.run(`
+                        INSERT INTO match_submissions (match_id, user_id, scores, submitted_at)
+                        VALUES (?, ?, ?, datetime('now'))
+                    `, [matchId, userId, JSON.stringify(scores)], (err) => {
                         if (err) {
                             db.run('ROLLBACK');
                             console.error(err);
-                            return res.status(500).send('Error checking submissions');
+                            return res.status(500).send('Error submitting scores');
                         }
                         
-                        if (recentSubmissions.length === players.length) {
-                            const allSame = recentSubmissions.every(sub => 
-                                JSON.stringify(JSON.parse(sub.scores)) === JSON.stringify(scores)
-                            );
+                        // Check if all players have submitted the same scores
+                        db.all(`
+                            SELECT scores
+                            FROM match_submissions
+                            WHERE match_id = ?
+                            ORDER BY submitted_at DESC
+                            LIMIT ?
+                        `, [matchId, players.length], (err, recentSubmissions) => {
+                            if (err) {
+                                db.run('ROLLBACK');
+                                console.error(err);
+                                return res.status(500).send('Error checking submissions');
+                            }
                             
-                            if (allSame) {
-                                // Auto-finalize the match
-                                db.run(`
-                                    UPDATE matches
-                                    SET status = 'completed',
-                                        completed_at = datetime('now')
-                                    WHERE id = ?
-                                `, [matchId], (err) => {
-                                    if (err) {
-                                        db.run('ROLLBACK');
-                                        console.error(err);
-                                        return res.status(500).send('Error finalizing match');
-                                    }
-                                    
-                                    // Update player final scores
-                                    const updates = Object.entries(scores).map(([playerId, score]) => {
-                                        return new Promise((resolve, reject) => {
-                                            db.run(`
-                                                UPDATE match_players
-                                                SET final_score = ?
-                                                WHERE match_id = ? AND user_id = ?
-                                            `, [score, matchId, playerId], (err) => {
-                                                if (err) reject(err);
-                                                else resolve();
-                                            });
-                                        });
-                                    });
-                                    
-                                    Promise.all(updates)
-                                        .then(() => {
-                                            db.run('COMMIT', (err) => {
-                                                if (err) {
-                                                    console.error(err);
-                                                    return res.status(500).send('Error committing transaction');
-                                                }
-                                                res.redirect(`/matches/${matchId}`);
-                                            });
-                                        })
-                                        .catch(err => {
+                            if (recentSubmissions.length === players.length) {
+                                const allSame = recentSubmissions.every(sub => 
+                                    JSON.stringify(JSON.parse(sub.scores)) === JSON.stringify(scores)
+                                );
+                                
+                                if (allSame) {
+                                    // Auto-finalize the match
+                                    db.run(`
+                                        UPDATE matches
+                                        SET status = 'completed',
+                                            completed_at = datetime('now')
+                                        WHERE id = ?
+                                    `, [matchId], (err) => {
+                                        if (err) {
                                             db.run('ROLLBACK');
                                             console.error(err);
-                                            res.status(500).send('Error updating player scores');
+                                            return res.status(500).send('Error finalizing match');
+                                        }
+                                        
+                                        // Update player final scores
+                                        const updates = Object.entries(scores).map(([playerId, score]) => {
+                                            return new Promise((resolve, reject) => {
+                                                db.run(`
+                                                    UPDATE match_players
+                                                    SET final_score = ?
+                                                    WHERE match_id = ? AND user_id = ?
+                                                `, [score, matchId, playerId], (err) => {
+                                                    if (err) reject(err);
+                                                    else resolve();
+                                                });
+                                            });
                                         });
-                                });
-                                return;
+                                        
+                                        Promise.all(updates)
+                                            .then(() => {
+                                                db.run('COMMIT', (err) => {
+                                                    if (err) {
+                                                        console.error(err);
+                                                        return res.status(500).send('Error committing transaction');
+                                                    }
+                                                    res.redirect(`/matches/${matchId}`);
+                                                });
+                                            })
+                                            .catch(err => {
+                                                db.run('ROLLBACK');
+                                                console.error(err);
+                                                res.status(500).send('Error updating player scores');
+                                            });
+                                    });
+                                    return;
+                                }
                             }
-                        }
-                        
-                        db.run('COMMIT', (err) => {
-                            if (err) {
-                                console.error(err);
-                                return res.status(500).send('Error committing transaction');
-                            }
-                            res.redirect(`/matches/${matchId}`);
+                            
+                            db.run('COMMIT', (err) => {
+                                if (err) {
+                                    console.error(err);
+                                    return res.status(500).send('Error committing transaction');
+                                }
+                                res.redirect(`/matches/${matchId}`);
+                            });
                         });
                     });
                 });
