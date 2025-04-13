@@ -228,7 +228,7 @@ router.get('/matches/:id', (req, res) => {
         
         // Get match players
         db.all(`
-            SELECT mp.*, u.username
+            SELECT mp.*, COALESCE(u.username, u.discordname) as display_name
             FROM match_players mp
             JOIN users u ON mp.user_id = u.id
             WHERE mp.match_id = ?
@@ -244,7 +244,7 @@ router.get('/matches/:id', (req, res) => {
             
             // Get match submissions
             db.all(`
-                SELECT ms.*, u.username
+                SELECT ms.*, COALESCE(u.username, u.discordname) as display_name
                 FROM match_submissions ms
                 JOIN users u ON ms.user_id = u.id
                 WHERE ms.match_id = ?
@@ -536,7 +536,7 @@ router.post('/matches/:id/finalize', (req, res) => {
                 // Get match players
                 const players = await new Promise((resolve, reject) => {
                     db.all(`
-                        SELECT mp.*, u.username
+                        SELECT mp.*, COALESCE(u.username, u.discordname) as display_name
                         FROM match_players mp
                         JOIN users u ON mp.user_id = u.id
                         WHERE mp.match_id = ?
@@ -606,7 +606,7 @@ router.get('/events/:id/matches/new', (req, res) => {
     
     // Get event participants
     db.all(`
-        SELECT u.id, u.username
+        SELECT u.id, COALESCE(u.username, u.discordname) as display_name
         FROM users u
         JOIN event_participants ep ON u.id = ep.user_id
         WHERE ep.event_id = ?

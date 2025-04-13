@@ -80,6 +80,9 @@ passport.use(new DiscordStrategy({
     try {
         const db = app.locals.db;
         
+        // Create username with discriminator
+        const username = profile.username;
+        
         // Check if user exists
         db.get('SELECT * FROM users WHERE discord_id = ?', [profile.id], (err, user) => {
             if (err) {
@@ -92,9 +95,9 @@ passport.use(new DiscordStrategy({
                 // Update user's Discord info
                 db.run(`
                     UPDATE users 
-                    SET username = ?, email = ?, avatar = ?, updated_at = datetime('now')
+                    SET discordname = ?, email = ?, avatar = ?, updated_at = datetime('now')
                     WHERE discord_id = ?
-                `, [profile.username, profile.email, profile.avatar, profile.id], (err) => {
+                `, [username, profile.email, profile.avatar, profile.id], (err) => {
                     if (err) {
                         console.error('Update error:', err);
                         return done(err);
@@ -105,9 +108,9 @@ passport.use(new DiscordStrategy({
                 console.log('Creating new user');
                 // Create new user
                 db.run(`
-                    INSERT INTO users (username, email, discord_id, avatar, created_at)
+                    INSERT INTO users (discordname, email, discord_id, avatar, created_at)
                     VALUES (?, ?, ?, ?, datetime('now'))
-                `, [profile.username, profile.email, profile.id, profile.avatar], function(err) {
+                `, [username, profile.email, profile.id, profile.avatar], function(err) {
                     if (err) {
                         console.error('Insert error:', err);
                         return done(err);
@@ -115,7 +118,7 @@ passport.use(new DiscordStrategy({
                     
                     const newUser = {
                         id: this.lastID,
-                        username: profile.username,
+                        discordname: username,
                         email: profile.email,
                         discord_id: profile.id,
                         avatar: profile.avatar

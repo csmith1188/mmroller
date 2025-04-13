@@ -15,7 +15,7 @@ router.get('/profile', async (req, res) => {
     try {
         // Get user info
         const user = await new Promise((resolve, reject) => {
-            db.get('SELECT id, username FROM users WHERE id = ?', [userId], (err, row) => {
+            db.get('SELECT id, COALESCE(username, discordname) as display_name FROM users WHERE id = ?', [userId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });

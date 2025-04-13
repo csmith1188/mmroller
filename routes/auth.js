@@ -20,7 +20,7 @@ router.post('/login', redirectIfLoggedIn, (req, res) => {
     const { username, password } = req.body;
     const db = req.app.locals.db;
     
-    db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
+    db.get('SELECT * FROM users WHERE username = ? OR discordname = ?', [username, username], (err, user) => {
         if (err) {
             console.error('Login error:', err);
             return res.render('login', { error: 'Error during login. Please try again.' });

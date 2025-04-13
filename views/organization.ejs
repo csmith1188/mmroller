@@ -75,7 +75,7 @@
                                 <div class="list-group-item">
                                     <div class="d-flex justify-content-between align-items-center">
                                         <div>
-                                            <a href="/profile/<%= member.id %>" class="text-decoration-none"><%= member.username %></a>
+                                            <a href="/profile/<%= member.id %>" class="text-decoration-none"><%= member.display_name %></a>
                                             <% if (member.is_admin) { %>
                                                 <span class="badge bg-primary ms-2">Admin</span>
                                             <% } %>
@@ -135,7 +135,7 @@
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body">
-                                                            <p>Are you sure you want to promote <strong><%= member.username %></strong> to admin?</p>
+                                                            <p>Are you sure you want to promote <strong><%= member.display_name %></strong> to admin?</p>
                                                         </div>
                                                         <div class="modal-footer">
                                                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -156,7 +156,7 @@
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body">
-                                                            <p>Are you sure you want to remove admin status from <strong><%= member.username %></strong>?</p>
+                                                            <p>Are you sure you want to remove admin status from <strong><%= member.display_name %></strong>?</p>
                                                         </div>
                                                         <div class="modal-footer">
                                                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -177,7 +177,7 @@
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body">
-                                                            <p>Are you sure you want to unban <strong><%= member.username %></strong> from the organization?</p>
+                                                            <p>Are you sure you want to unban <strong><%= member.display_name %></strong> from the organization?</p>
                                                             <p>They will be able to rejoin the organization.</p>
                                                         </div>
                                                         <div class="modal-footer">
@@ -199,7 +199,7 @@
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body">
-                                                            <p>Are you sure you want to kick <strong><%= member.username %></strong> from the organization?</p>
+                                                            <p>Are you sure you want to kick <strong><%= member.display_name %></strong> from the organization?</p>
                                                             <p class="text-danger">This will also remove them from all organization events and mark their matches as forfeit.</p>
                                                         </div>
                                                         <div class="modal-footer">
@@ -221,7 +221,7 @@
                                                             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                         </div>
                                                         <div class="modal-body">
-                                                            <p>Are you sure you want to ban <strong><%= member.username %></strong> from the organization?</p>
+                                                            <p>Are you sure you want to ban <strong><%= member.display_name %></strong> from the organization?</p>
                                                             <p class="text-danger">This will kick them from the organization and prevent them from rejoining.</p>
                                                         </div>
                                                         <div class="modal-footer">

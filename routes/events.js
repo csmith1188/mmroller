@@ -58,7 +58,7 @@ router.get('/events/:id', (req, res) => {
             
                 // Get event participants
                 db.all(`
-                    SELECT u.id, u.username,
+                    SELECT u.id, COALESCE(u.username, u.discordname) as display_name,
                            pes.mmr, pes.matches_played, pes.wins, pes.losses,
                            CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
                            CASE WHEN eb.status = 'active' THEN 1 ELSE 0 END as is_banned
@@ -120,7 +120,7 @@ router.get('/events/:id', (req, res) => {
                         // Get event applications if user is admin
                         if (event.is_admin) {
                             db.all(`
-                                SELECT ea.*, u.username
+                                SELECT ea.*, COALESCE(u.username, u.discordname) as display_name
                                 FROM event_applications ea
                                 JOIN users u ON ea.user_id = u.id
                                 WHERE ea.event_id = ?

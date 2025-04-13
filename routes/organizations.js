@@ -118,7 +118,7 @@ router.get('/organizations/:id', (req, res) => {
 
             // Get organization members
             db.all(`
-                SELECT u.id, u.username,
+                SELECT u.id, COALESCE(u.username, u.discordname) as display_name,
                        CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_admins 

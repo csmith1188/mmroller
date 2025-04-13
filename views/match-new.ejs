@@ -10,7 +10,7 @@
                         <label for="player1_id" class="form-label">Player 1</label>
                         <select class="form-select" id="player1_id" name="player1_id" required>
                             <% participants.forEach(participant => { %>
-                                <option value="<%= participant.id %>"><%= participant.username %></option>
+                                <option value="<%= participant.id %>"><%= participant.display_name %></option>
                             <% }); %>
                         </select>
                     </div>
@@ -18,7 +18,7 @@
                         <label for="player2_id" class="form-label">Player 2</label>
                         <select class="form-select" id="player2_id" name="player2_id" required>
                             <% participants.forEach(participant => { %>
-                                <option value="<%= participant.id %>"><%= participant.username %></option>
+                                <option value="<%= participant.id %>"><%= participant.display_name %></option>
                             <% }); %>
                         </select>
                     </div>

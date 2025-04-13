@@ -34,7 +34,7 @@
                                     <tr>
                                         <td>
                                             <a href="/profile/<%= participant.id %>" class="text-decoration-none">
-                                                <%= participant.username %>
+                                                <%= participant.display_name %>
                                             </a>
                                         </td>
                                         <td class="text-end">
@@ -84,7 +84,7 @@
                                                                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                                 </div>
                                                                 <div class="modal-body">
-                                                                    <p>Are you sure you want to unban <strong><%= participant.username %></strong> from this event?</p>
+                                                                    <p>Are you sure you want to unban <strong><%= participant.display_name %></strong> from this event?</p>
                                                                     <p>They will be able to rejoin the event.</p>
                                                                 </div>
                                                                 <div class="modal-footer">
@@ -106,7 +106,7 @@
                                                                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                                 </div>
                                                                 <div class="modal-body">
-                                                                    <p>Are you sure you want to kick <strong><%= participant.username %></strong> from this event?</p>
+                                                                    <p>Are you sure you want to kick <strong><%= participant.display_name %></strong> from this event?</p>
                                                                     <p class="text-danger">This will remove them from the event and mark their matches as forfeit.</p>
                                                                 </div>
                                                                 <div class="modal-footer">
@@ -128,7 +128,7 @@
                                                                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                                                 </div>
                                                                 <div class="modal-body">
-                                                                    <p>Are you sure you want to ban <strong><%= participant.username %></strong> from this event?</p>
+                                                                    <p>Are you sure you want to ban <strong><%= participant.display_name %></strong> from this event?</p>
                                                                     <p class="text-danger">This will kick them from the event and prevent them from rejoining.</p>
                                                                 </div>
                                                                 <div class="modal-footer">
@@ -191,7 +191,7 @@
                                 <div class="list-group-item">
                                     <div class="d-flex justify-content-between align-items-center">
                                         <div>
-                                            <h6 class="mb-1"><%= application.username %></h6>
+                                            <h6 class="mb-1"><%= application.display_name %></h6>
                                             <small class="text-muted">
                                                 Applied: <%= new Date(application.applied_at).toLocaleString() %>
                                             </small>
