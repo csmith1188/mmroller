@@ -1,13 +1,8 @@
-- can't select discord names when creating matches
 - admins can't submit their own results
 - submission fields are reversed
-- undefined's Profile, Username:
-- events card in profiles
-- discord users link to messaging that user
 - org/event description formatting (and character limited preview)
 - org privacy toggle
-- only org members apply events
-- discord users can't change their own password
+- only org members apply to events
 - error message templates
 - forfeit kicked/banned handling
 - Teams

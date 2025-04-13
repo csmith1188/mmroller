@@ -15,7 +15,7 @@ router.get('/profile', async (req, res) => {
     try {
         // Get user info
         const user = await new Promise((resolve, reject) => {
-            db.get('SELECT id, COALESCE(username, discordname) as display_name FROM users WHERE id = ?', [userId], (err, row) => {
+            db.get('SELECT id, COALESCE(username, discordname) as display_name, email, password_hash IS NOT NULL as has_password FROM users WHERE id = ?', [userId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -170,7 +170,7 @@ router.get('/profile/:id', async (req, res) => {
     try {
         // Get user details
         const user = await new Promise((resolve, reject) => {
-            db.get('SELECT * FROM users WHERE id = ?', [profileId], (err, row) => {
+            db.get('SELECT *, COALESCE(username, discordname) as display_name, discord_id IS NOT NULL as is_discord_user FROM users WHERE id = ?', [profileId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });

@@ -10,12 +10,20 @@
                     <div class="card-body">
                         <div class="mb-4">
                             <h3>Basic Information</h3>
-                            <p><strong>Username:</strong> <%= user.display_name %></p>
+                            <p><strong>Username:</strong> 
+                                <% if (!isViewingOwnProfile && user.is_discord_user && user.discord_id) { %>
+                                    <a href="discord://-/users/<%= user.discord_id %>"><%= user.display_name %></a>
+                                <% } else { %>
+                                    <%= user.display_name %>
+                                <% } %>
+                            </p>
                             <% if (isViewingOwnProfile) { %>
                                 <p><strong>Email:</strong> <%= user.email %></p>
                                 <div class="mt-3">
                                     <a href="/profile/edit" class="btn btn-primary">Edit Profile</a>
-                                    <a href="/profile/change-password" class="btn btn-secondary">Change Password</a>
+                                    <% if (user.has_password) { %>
+                                        <a href="/profile/change-password" class="btn btn-secondary">Change Password</a>
+                                    <% } %>
                                 </div>
                             <% } %>
                         </div>
@@ -49,14 +57,10 @@
                             <% } else { %>
                                 <div class="list-group">
                                     <% events.forEach(event => { %>
-                                        <div class="list-group-item">
+                                        <a href="/events/<%= event.id %>" class="list-group-item list-group-item-action">
                                             <div class="d-flex w-100 justify-content-between align-items-start">
                                                 <div>
-                                                    <h5 class="mb-1">
-                                                        <a href="/events/<%= event.id %>" class="text-decoration-none">
-                                                            <%= event.name %>
-                                                        </a>
-                                                    </h5>
+                                                    <h5 class="mb-1"><%= event.name %></h5>
                                                     <p class="mb-1 text-muted"><%= event.organization_name %></p>
                                                 </div>
                                                 <div class="text-end">
@@ -73,7 +77,7 @@
                                                     <span class="text-danger">L: <%= event.losses %></span>
                                                 </div>
                                             </div>
-                                        </div>
+                                        </a>
                                     <% }); %>
                                 </div>
                             <% } %>
