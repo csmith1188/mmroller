@@ -180,12 +180,24 @@ router.get('/events/:id', (req, res) => {
                                 });
                             });
                         } else {
-                            res.render('event', {
-                                event,
-                                participants: participantsWithStats,
-                                matches: processedMatches,
-                                applications: [],
-                                userId
+                            // Check if user has already applied
+                            db.get(`
+                                SELECT 1 FROM event_applications
+                                WHERE event_id = ? AND user_id = ?
+                            `, [eventId, userId], (err, hasApplied) => {
+                                if (err) {
+                                    console.error(err);
+                                    return res.status(500).send('Error checking application status');
+                                }
+                                
+                                res.render('event', {
+                                    event,
+                                    participants: participantsWithStats,
+                                    matches: processedMatches,
+                                    applications: [],
+                                    userId,
+                                    hasApplied: !!hasApplied
+                                });
                             });
                         }
                     });
@@ -521,10 +533,6 @@ router.get('/events/:id/search-players', (req, res) => {
             console.error('Search error:', err);
             return res.status(500).send('Error searching players');
         }
-        
-        // Log the search results for debugging
-        console.log('Search query:', query);
-        console.log('Players found:', players);
         
         res.json(players);
     });

@@ -285,9 +285,13 @@
                     <% } %>
                     
                     <% if (!event.is_participant) { %>
-                        <form action="/events/<%= event.id %>/apply" method="POST">
-                            <button type="submit" class="btn btn-primary">Apply to Join</button>
-                        </form>
+                        <% if (hasApplied) { %>
+                            <button type="button" class="btn btn-secondary" disabled>Application Pending</button>
+                        <% } else { %>
+                            <form action="/events/<%= event.id %>/apply" method="POST">
+                                <button type="submit" class="btn btn-primary">Apply to Join</button>
+                            </form>
+                        <% } %>
                     <% } %>
                 </div>
             </div>
