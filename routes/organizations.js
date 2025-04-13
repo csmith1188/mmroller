@@ -49,14 +49,14 @@ router.post('/organizations', (req, res) => {
     const adminId = req.session.userId;
     
     if (!adminId) {
-        return res.status(401).send('You must be logged in to create an organization');
+        return res.status(401).render('error', { message: 'You must be logged in to create an organization' });
     }
     
     // Start transaction
     db.run('BEGIN TRANSACTION', (err) => {
         if (err) {
             console.error('Error starting transaction:', err);
-            return res.status(500).send('Error creating organization');
+            return res.status(500).render('error', { message: 'Error creating organization' });
         }
         
         // Create organization
@@ -67,7 +67,7 @@ router.post('/organizations', (req, res) => {
                 if (err) {
                     console.error('Error creating organization:', err);
                     db.run('ROLLBACK');
-                    return res.status(500).send('Error creating organization');
+                    return res.status(500).render('error', { message: 'Error creating organization' });
                 }
                 
                 const orgId = this.lastID;
@@ -80,7 +80,7 @@ router.post('/organizations', (req, res) => {
                         if (err) {
                             console.error('Error adding creator to organization:', err);
                             db.run('ROLLBACK');
-                            return res.status(500).send('Error adding creator to organization');
+                            return res.status(500).render('error', { message: 'Error adding creator to organization' });
                         }
                         
                         // Add creator as admin
@@ -91,7 +91,7 @@ router.post('/organizations', (req, res) => {
                                 if (err) {
                                     console.error('Error adding creator as admin:', err);
                                     db.run('ROLLBACK');
-                                    return res.status(500).send('Error adding creator as admin');
+                                    return res.status(500).render('error', { message: 'Error adding creator as admin' });
                                 }
                                 
                                 // Commit transaction
@@ -99,7 +99,7 @@ router.post('/organizations', (req, res) => {
                                     if (err) {
                                         console.error('Error committing transaction:', err);
                                         db.run('ROLLBACK');
-                                        return res.status(500).send('Error creating organization');
+                                        return res.status(500).render('error', { message: 'Error creating organization' });
                                     }
                                     
                                     res.redirect('/profile');
@@ -133,8 +133,8 @@ router.get('/organizations/:id', (req, res) => {
         WHERE o.id = ?
     `, [userId, userId, orgId], (err, organization) => {
         if (err || !organization) {
-            console.error(err);
-            return res.status(404).send('Organization not found');
+            console.error('Error fetching organization:', err);
+            return res.status(404).render('error', { message: 'Organization not found' });
         }
 
         // Format the organization description based on admin status
@@ -148,12 +148,12 @@ router.get('/organizations/:id', (req, res) => {
             WHERE organization_id = ? AND user_id = ? AND status = 'active'
         `, [orgId, userId], (err, isBanned) => {
             if (err) {
-                console.error(err);
-                return res.status(500).send('Error checking ban status');
+                console.error('Error checking ban status:', err);
+                return res.status(500).render('error', { message: 'Error checking ban status' });
             }
 
             if (isBanned && !organization.is_admin) {
-                return res.status(403).send('You are banned from this organization');
+                return res.status(403).render('error', { message: 'You are banned from this organization' });
             }
 
             // Get organization members
@@ -177,8 +177,8 @@ router.get('/organizations/:id', (req, res) => {
                 ORDER BY u.username
             `, [orgId, organization.is_admin], (err, members) => {
                 if (err) {
-                    console.error(err);
-                    return res.status(500).send('Error fetching members');
+                    console.error('Error fetching members:', err);
+                    return res.status(500).render('error', { message: 'Error fetching members' });
                 }
 
                 // Get organization events
@@ -196,8 +196,8 @@ router.get('/organizations/:id', (req, res) => {
                     ORDER BY e.start_date DESC
                 `, [orgId, organization.is_admin, userId], (err, events) => {
                     if (err) {
-                        console.error(err);
-                        return res.status(500).send('Error fetching events');
+                        console.error('Error fetching events:', err);
+                        return res.status(500).render('error', { message: 'Error fetching events' });
                     }
 
                     // Format event descriptions
@@ -233,8 +233,8 @@ router.post('/organizations/:id/join', (req, res) => {
         WHERE organization_id = ? AND user_id = ?
     `, [orgId, userId], (err, result) => {
         if (err) {
-            console.error(err);
-            return res.status(500).send('Error checking membership');
+            console.error('Error checking membership:', err);
+            return res.status(500).render('error', { message: 'Error checking membership' });
         }
         
         if (result) {
@@ -247,8 +247,8 @@ router.post('/organizations/:id/join', (req, res) => {
             [orgId, userId],
             (err) => {
                 if (err) {
-                    console.error(err);
-                    return res.status(500).send('Error joining organization');
+                    console.error('Error joining organization:', err);
+                    return res.status(500).render('error', { message: 'Error joining organization' });
                 }
                 
                 res.redirect(`/organizations/${orgId}`);
@@ -278,7 +278,7 @@ router.post('/organizations/:id/kick/:userId', async (req, res) => {
         });
 
         if (!isAdmin) {
-            return res.status(403).send('Unauthorized: You must be an admin to kick members');
+            return res.status(403).render('error', { message: 'Unauthorized: You must be an admin to kick members' });
         }
 
         // Check if target user is the organization creator
@@ -294,7 +294,7 @@ router.post('/organizations/:id/kick/:userId', async (req, res) => {
         });
 
         if (isCreator) {
-            return res.status(403).send('Unauthorized: Cannot kick the organization creator');
+            return res.status(403).render('error', { message: 'Unauthorized: Cannot kick the organization creator' });
         }
 
         // Start transaction
@@ -374,7 +374,7 @@ router.post('/organizations/:id/kick/:userId', async (req, res) => {
         }
     } catch (error) {
         console.error('Error kicking user:', error);
-        res.status(500).send('Error kicking user');
+        return res.status(500).render('error', { message: 'Error kicking user' });
     }
 });
 
@@ -399,7 +399,7 @@ router.post('/organizations/:id/ban/:userId', async (req, res) => {
         });
 
         if (!isAdmin) {
-            return res.status(403).send('Unauthorized: Only organization admins can ban members');
+            return res.status(403).render('error', { message: 'Unauthorized: Only organization admins can ban members' });
         }
 
         // Check if target user is the organization creator
@@ -414,7 +414,7 @@ router.post('/organizations/:id/ban/:userId', async (req, res) => {
         });
 
         if (isCreator) {
-            return res.status(403).send('Cannot ban the organization creator');
+            return res.status(403).render('error', { message: 'Cannot ban the organization creator' });
         }
 
         // Start transaction
@@ -480,8 +480,8 @@ router.post('/organizations/:id/ban/:userId', async (req, res) => {
             throw err;
         }
     } catch (err) {
-        console.error(err);
-        res.status(500).send('Error banning member');
+        console.error('Error banning member:', err);
+        return res.status(500).render('error', { message: 'Error banning member' });
     }
 });
 
@@ -506,7 +506,7 @@ router.post('/organizations/:id/unban/:userId', async (req, res) => {
         });
 
         if (!isAdmin) {
-            return res.status(403).send('Unauthorized: Only organization admins can unban members');
+            return res.status(403).render('error', { message: 'Unauthorized: Only organization admins can unban members' });
         }
 
         // Update ban status to inactive
@@ -523,8 +523,8 @@ router.post('/organizations/:id/unban/:userId', async (req, res) => {
 
         res.redirect(`/organizations/${orgId}`);
     } catch (err) {
-        console.error(err);
-        res.status(500).send('Error unbanning member');
+        console.error('Error unbanning member:', err);
+        return res.status(500).render('error', { message: 'Error unbanning member' });
     }
 });
 
@@ -549,7 +549,7 @@ router.post('/organizations/:id/promote/:userId', async (req, res) => {
         });
 
         if (!isAdmin) {
-            return res.status(403).send('Unauthorized: You must be an admin to promote members');
+            return res.status(403).render('error', { message: 'Unauthorized: You must be an admin to promote members' });
         }
 
         // Start transaction
@@ -603,7 +603,7 @@ router.post('/organizations/:id/promote/:userId', async (req, res) => {
         }
     } catch (error) {
         console.error('Error promoting user:', error);
-        res.status(500).send('Error promoting user');
+        return res.status(500).render('error', { message: 'Error promoting user' });
     }
 });
 
@@ -628,7 +628,7 @@ router.post('/organizations/:id/remove-admin/:userId', async (req, res) => {
         });
 
         if (!isCreator) {
-            return res.status(403).send('Unauthorized: Only the organization creator can remove admin status');
+            return res.status(403).render('error', { message: 'Unauthorized: Only the organization creator can remove admin status' });
         }
 
         // Check if target user is the creator
@@ -644,7 +644,7 @@ router.post('/organizations/:id/remove-admin/:userId', async (req, res) => {
         });
 
         if (isTargetCreator) {
-            return res.status(403).send('Cannot remove admin status from organization creator');
+            return res.status(403).render('error', { message: 'Cannot remove admin status from organization creator' });
         }
 
         // Remove admin status
@@ -662,7 +662,7 @@ router.post('/organizations/:id/remove-admin/:userId', async (req, res) => {
         res.redirect(`/organizations/${id}`);
     } catch (error) {
         console.error('Error removing admin status:', error);
-        res.status(500).send('Error removing admin status');
+        return res.status(500).render('error', { message: 'Error removing admin status' });
     }
 });
 
@@ -702,8 +702,8 @@ router.get('/organizations', (req, res) => {
         LIMIT ? OFFSET ?
     `, [userId, userId, userId, userId, `%${search}%`, `%${search}%`, limit, offset], (err, userOrgs) => {
         if (err) {
-            console.error(err);
-            return res.status(500).send('Error fetching user organizations');
+            console.error('Error fetching user organizations:', err);
+            return res.status(500).render('error', { message: 'Error fetching user organizations' });
         }
 
         // Format descriptions for user's organizations
@@ -720,8 +720,8 @@ router.get('/organizations', (req, res) => {
             AND (o.name LIKE ? OR o.description LIKE ?)
         `, [userId, `%${search}%`, `%${search}%`], (err, userOrgsCount) => {
             if (err) {
-                console.error(err);
-                return res.status(500).send('Error counting user organizations');
+                console.error('Error counting user organizations:', err);
+                return res.status(500).render('error', { message: 'Error counting user organizations' });
             }
 
             // Get other organizations with pagination
@@ -749,8 +749,8 @@ router.get('/organizations', (req, res) => {
                 LIMIT ? OFFSET ?
             `, [userId, userId, userId, userId, `%${search}%`, `%${search}%`, limit, offset], (err, otherOrgs) => {
                 if (err) {
-                    console.error(err);
-                    return res.status(500).send('Error fetching all organizations');
+                    console.error('Error fetching all organizations:', err);
+                    return res.status(500).render('error', { message: 'Error fetching all organizations' });
                 }
 
                 // Format descriptions for other organizations
@@ -769,8 +769,8 @@ router.get('/organizations', (req, res) => {
                     AND (o.name LIKE ? OR o.description LIKE ?)
                 `, [userId, `%${search}%`, `%${search}%`], (err, otherOrgsCount) => {
                     if (err) {
-                        console.error(err);
-                        return res.status(500).send('Error counting other organizations');
+                        console.error('Error counting other organizations:', err);
+                        return res.status(500).render('error', { message: 'Error counting other organizations' });
                     }
 
                     const totalUserPages = Math.ceil(userOrgsCount.count / limit);
@@ -814,7 +814,7 @@ router.post('/organizations/:id/update', async (req, res) => {
         });
 
         if (!isAdmin) {
-            return res.status(403).send('Unauthorized: You must be an admin to update the organization');
+            return res.status(403).render('error', { message: 'Unauthorized: You must be an admin to update the organization' });
         }
 
         // Update organization
@@ -832,7 +832,116 @@ router.post('/organizations/:id/update', async (req, res) => {
         res.redirect(`/organizations/${id}`);
     } catch (error) {
         console.error('Error updating organization:', error);
-        res.status(500).send('Error updating organization');
+        return res.status(500).render('error', { message: 'Error updating organization' });
+    }
+});
+
+// Leave organization
+router.post('/organizations/:id/leave', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const userId = req.session.userId;
+    const organizationId = req.params.id;
+
+    try {
+        // Check if user is the creator
+        const org = await new Promise((resolve, reject) => {
+            db.get('SELECT created_by FROM organizations WHERE id = ?', [organizationId], (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        });
+
+        if (!org) {
+            return res.status(404).render('error', { message: 'Organization not found' });
+        }
+
+        if (org.created_by === userId) {
+            return res.status(403).render('error', { message: 'Organization creator cannot leave the organization' });
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+
+        try {
+            // Remove user from organization
+            await new Promise((resolve, reject) => {
+                db.run('DELETE FROM organization_members WHERE organization_id = ? AND user_id = ?', 
+                    [organizationId, userId], (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+            });
+
+            // Remove user from organization admins if they are one
+            await new Promise((resolve, reject) => {
+                db.run('DELETE FROM organization_admins WHERE organization_id = ? AND user_id = ?', 
+                    [organizationId, userId], (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+            });
+
+            // Get all events in the organization
+            const events = await new Promise((resolve, reject) => {
+                db.all('SELECT id FROM events WHERE organization_id = ?', [organizationId], (err, rows) => {
+                    if (err) reject(err);
+                    else resolve(rows);
+                });
+            });
+
+            // Remove user from all organization events
+            for (const event of events) {
+                await new Promise((resolve, reject) => {
+                    db.run('DELETE FROM event_participants WHERE event_id = ? AND user_id = ?', 
+                        [event.id, userId], (err) => {
+                            if (err) reject(err);
+                            else resolve();
+                        });
+                });
+
+                // Mark user's matches as forfeit
+                await new Promise((resolve, reject) => {
+                    db.run(`
+                        UPDATE matches 
+                        SET status = 'forfeit' 
+                        WHERE event_id = ? 
+                        AND id IN (
+                            SELECT match_id 
+                            FROM match_players 
+                            WHERE user_id = ?
+                        )
+                    `, [event.id, userId], (err) => {
+                        if (err) reject(err);
+                        else resolve();
+                    });
+                });
+            }
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            });
+
+            res.redirect('/organizations');
+        } catch (error) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error leaving organization:', error);
+        return res.status(500).render('error', { message: 'Error leaving organization' });
     }
 });
 

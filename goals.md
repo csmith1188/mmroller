@@ -1,7 +1,7 @@
 - submission fields are reversed ?? can't replicate
 - org privacy toggle
 - only org members apply to events
-- error message templates
+- orgs in your profile even when banned
 - forfeit kicked/banned handling
 - icons for actions/discord/etc
 - Teams

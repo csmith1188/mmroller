@@ -120,7 +120,7 @@ router.get('/profile', async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching profile:', error);
-        res.status(500).send('Error fetching profile');
+        return res.status(500).render('error', { message: 'Error fetching profile' });
     }
 });
 
@@ -150,7 +150,7 @@ router.post('/profile/edit', (req, res) => {
         [username, email, userId],
         (err) => {
             if (err) {
-                return res.status(500).send('Error updating profile');
+                return res.status(500).render('error', { message: 'Error updating profile' });
             }
             
             res.redirect('/profile');
@@ -186,7 +186,7 @@ router.post('/profile/change-password', (req, res) => {
             
             bcrypt.hash(new_password, 10, (err, hash) => {
                 if (err) {
-                    return res.status(500).send('Error hashing password');
+                    return res.status(500).render('error', { message: 'Error hashing password' });
                 }
                 
                 db.run(
@@ -194,7 +194,7 @@ router.post('/profile/change-password', (req, res) => {
                     [hash, userId],
                     (err) => {
                         if (err) {
-                            return res.status(500).send('Error updating password');
+                            return res.status(500).render('error', { message: 'Error updating password' });
                         }
                         
                         res.redirect('/profile');
@@ -228,7 +228,7 @@ router.get('/profile/:id', async (req, res) => {
         });
 
         if (!user) {
-            return res.status(404).send('User not found');
+            return res.status(404).render('error', { message: 'User not found' });
         }
 
         // Get user's organizations
@@ -344,7 +344,7 @@ router.get('/profile/:id', async (req, res) => {
         });
     } catch (err) {
         console.error(err);
-        res.status(500).send('Error fetching profile');
+        return res.status(500).render('error', { message: 'Error fetching profile' });
     }
 });
 

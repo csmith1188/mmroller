@@ -219,11 +219,11 @@ router.get('/matches/:id', (req, res) => {
     `, [userId, matchId], (err, match) => {
         if (err) {
             console.error('Error fetching match:', err);
-            return res.status(500).send('Error fetching match details');
+            return res.status(500).render('error', { message: 'Error fetching match details' });
         }
         
         if (!match) {
-            return res.status(404).send('Match not found');
+            return res.status(404).render('error', { message: 'Match not found' });
         }
         
         // Get match players
@@ -236,7 +236,7 @@ router.get('/matches/:id', (req, res) => {
         `, [matchId], (err, players) => {
             if (err) {
                 console.error('Error fetching players:', err);
-                return res.status(500).send('Error fetching match players');
+                return res.status(500).render('error', { message: 'Error fetching match players' });
             }
             
             // Check if current user is a player
@@ -252,7 +252,7 @@ router.get('/matches/:id', (req, res) => {
             `, [matchId], (err, submissions) => {
                 if (err) {
                     console.error('Error fetching submissions:', err);
-                    return res.status(500).send('Error fetching match submissions');
+                    return res.status(500).render('error', { message: 'Error fetching match submissions' });
                 }
                 
                 // Parse scores for each submission
@@ -308,18 +308,18 @@ router.post('/matches/:id/scores', (req, res) => {
     `, [matchId, userId, matchId, userId], (err, result) => {
         if (err) {
             console.error(err);
-            return res.status(500).send('Error checking user permissions');
+            return res.status(500).render('error', { message: 'Error checking user permissions' });
         }
         
         if (!result.is_player && !result.is_admin) {
-            return res.status(403).send('Only players in the match or organization admins can submit scores');
+            return res.status(403).render('error', { message: 'Only players in the match or organization admins can submit scores' });
         }
         
         // Start transaction
         db.run('BEGIN TRANSACTION', (err) => {
             if (err) {
                 console.error(err);
-                return res.status(500).send('Error starting transaction');
+                return res.status(500).render('error', { message: 'Error starting transaction' });
             }
             
             // Get match players first
@@ -331,7 +331,7 @@ router.post('/matches/:id/scores', (req, res) => {
                 if (err) {
                     db.run('ROLLBACK');
                     console.error(err);
-                    return res.status(500).send('Error fetching match players');
+                    return res.status(500).render('error', { message: 'Error fetching match players' });
                 }
                 
                 // Delete previous submissions from this user
@@ -342,7 +342,7 @@ router.post('/matches/:id/scores', (req, res) => {
                     if (err) {
                         db.run('ROLLBACK');
                         console.error(err);
-                        return res.status(500).send('Error deleting previous submissions');
+                        return res.status(500).render('error', { message: 'Error deleting previous submissions' });
                     }
                     
                     // Insert submission
@@ -353,7 +353,7 @@ router.post('/matches/:id/scores', (req, res) => {
                         if (err) {
                             db.run('ROLLBACK');
                             console.error(err);
-                            return res.status(500).send('Error submitting scores');
+                            return res.status(500).render('error', { message: 'Error submitting scores' });
                         }
                         
                         // Check if all players have submitted the same scores
@@ -367,7 +367,7 @@ router.post('/matches/:id/scores', (req, res) => {
                             if (err) {
                                 db.run('ROLLBACK');
                                 console.error(err);
-                                return res.status(500).send('Error checking submissions');
+                                return res.status(500).render('error', { message: 'Error checking submissions' });
                             }
                             
                             if (recentSubmissions.length === players.length) {
@@ -386,7 +386,7 @@ router.post('/matches/:id/scores', (req, res) => {
                                         if (err) {
                                             db.run('ROLLBACK');
                                             console.error(err);
-                                            return res.status(500).send('Error finalizing match');
+                                            return res.status(500).render('error', { message: 'Error finalizing match' });
                                         }
                                         
                                         // Update player final scores
@@ -408,7 +408,7 @@ router.post('/matches/:id/scores', (req, res) => {
                                                 db.run('COMMIT', (err) => {
                                                     if (err) {
                                                         console.error(err);
-                                                        return res.status(500).send('Error committing transaction');
+                                                        return res.status(500).render('error', { message: 'Error committing transaction' });
                                                     }
                                                     res.redirect(`/matches/${matchId}`);
                                                 });
@@ -416,7 +416,7 @@ router.post('/matches/:id/scores', (req, res) => {
                                             .catch(err => {
                                                 db.run('ROLLBACK');
                                                 console.error(err);
-                                                res.status(500).send('Error updating player scores');
+                                                res.status(500).render('error', { message: 'Error updating player scores' });
                                             });
                                     });
                                     return;
@@ -426,7 +426,7 @@ router.post('/matches/:id/scores', (req, res) => {
                             db.run('COMMIT', (err) => {
                                 if (err) {
                                     console.error(err);
-                                    return res.status(500).send('Error committing transaction');
+                                    return res.status(500).render('error', { message: 'Error committing transaction' });
                                 }
                                 res.redirect(`/matches/${matchId}`);
                             });
@@ -457,13 +457,13 @@ router.post('/matches/:id/status', (req, res) => {
         )
     `, [matchId, userId], async (err, match) => {
         if (err || !match) {
-            return res.status(403).send('Unauthorized');
+            return res.status(403).render('error', { message: 'Unauthorized' });
         }
 
         db.run('BEGIN TRANSACTION', async (err) => {
             if (err) {
                 console.error(err);
-                return res.status(500).send('Error starting transaction');
+                return res.status(500).render('error', { message: 'Error starting transaction' });
             }
 
             try {
@@ -508,7 +508,7 @@ router.post('/matches/:id/status', (req, res) => {
             } catch (error) {
                 db.run('ROLLBACK');
                 console.error(error);
-                res.status(500).send('Error updating match status');
+                res.status(500).render('error', { message: 'Error updating match status' });
             }
         });
     });
@@ -533,14 +533,14 @@ router.post('/matches/:id/finalize', (req, res) => {
         )
     `, [matchId, userId], async (err, match) => {
         if (err || !match) {
-            return res.status(403).send('Unauthorized');
+            return res.status(403).render('error', { message: 'Unauthorized' });
         }
         
         // Start transaction
         db.run('BEGIN TRANSACTION', async (err) => {
             if (err) {
                 console.error(err);
-                return res.status(500).send('Error starting transaction');
+                return res.status(500).render('error', { message: 'Error starting transaction' });
             }
             
             try {
@@ -615,7 +615,7 @@ router.post('/matches/:id/finalize', (req, res) => {
             } catch (error) {
                 db.run('ROLLBACK');
                 console.error(error);
-                res.status(500).send('Error updating match and player stats');
+                res.status(500).render('error', { message: 'Error updating match and player stats' });
             }
         });
     });
@@ -635,7 +635,7 @@ router.get('/events/:id/matches/new', (req, res) => {
         WHERE ep.event_id = ?
     `, [eventId], (err, participants) => {
         if (err) {
-            return res.status(500).send('Database error');
+            return res.status(500).render('error', { message: 'Database error' });
         }
         
         res.render('new-match', { eventId, participants });
@@ -655,7 +655,7 @@ router.post('/events/:id/matches', async (req, res) => {
 
     // Validate input
     if (playerIds.length < 2) {
-        return res.status(400).send('At least two players are required');
+        return res.status(400).render('error', { message: 'At least two players are required' });
     }
 
     try {
@@ -672,7 +672,7 @@ router.post('/events/:id/matches', async (req, res) => {
         });
 
         if (!isAdmin) {
-            return res.status(403).send('Unauthorized: Only organization admins can create matches');
+            return res.status(403).render('error', { message: 'Unauthorized: You must be an admin to create matches' });
         }
 
         // Verify players are event participants
@@ -689,7 +689,7 @@ router.post('/events/:id/matches', async (req, res) => {
         });
 
         if (!areParticipants) {
-            return res.status(400).send('All players must be event participants');
+            return res.status(400).render('error', { message: 'All players must be event participants' });
         }
 
         // Start transaction
@@ -743,9 +743,9 @@ router.post('/events/:id/matches', async (req, res) => {
             });
             throw err;
         }
-    } catch (err) {
-        console.error(err);
-        res.status(500).send('Error creating match');
+    } catch (error) {
+        console.error('Error creating match:', error);
+        return res.status(500).render('error', { message: 'Error creating match' });
     }
 });
 

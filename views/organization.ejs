@@ -68,6 +68,32 @@
                             <form action="/organizations/<%= organization.id %>/join" method="POST" class="mb-3">
                                 <button type="submit" class="btn btn-primary w-100">Join Organization</button>
                             </form>
+                        <% } else if (!organization.is_creator) { %>
+                            <button type="button" class="btn btn-danger w-100 mb-3" data-bs-toggle="modal" data-bs-target="#leaveModal">
+                                Leave Organization
+                            </button>
+
+                            <!-- Leave Organization Modal -->
+                            <div class="modal fade" id="leaveModal" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Leave Organization</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <p>Are you sure you want to leave <strong><%= organization.name %></strong>?</p>
+                                            <p class="text-danger">This will remove you from all organization events and mark your matches as forfeit.</p>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                            <form action="/organizations/<%= organization.id %>/leave" method="POST">
+                                                <button type="submit" class="btn btn-danger">Leave Organization</button>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         <% } %>
                         
                         <div class="list-group">
