@@ -22,7 +22,7 @@
                             </form>
                         <% } else { %>
                             <% if (organization.description) { %>
-                                <p><%= organization.description %></p>
+                                <p><%- organization.description %></p>
                             <% } %>
                         <% } %>
                         
@@ -45,7 +45,7 @@
                                                 <span class="badge bg-success">Participant</span>
                                             <% } %>
                                         </div>
-                                        <p class="mb-1"><%= event.description %></p>
+                                        <p class="mb-1"><%- event.description %></p>
                                         <small>
                                             <%= new Date(event.start_date).toLocaleDateString() %> to 
                                             <%= new Date(event.end_date).toLocaleDateString() %>

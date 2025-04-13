@@ -1,6 +1,41 @@
 const express = require('express');
 const router = express.Router();
 
+function formatDescription(description) {
+    if (!description) return '';
+    
+    // Remove all \r characters
+    let formatted = description.replace(/\r/g, '');
+    
+    // Replace \n with <br>
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Replace multiple consecutive <br> with a maximum of two
+    formatted = formatted.replace(/(<br>){3,}/g, '<br><br>');
+    
+    // Truncate to 128 characters and add ellipsis if needed
+    if (formatted.length > 128) {
+        formatted = formatted.substring(0, 128).trim() + '...';
+    }
+    
+    return formatted;
+}
+
+function formatDescriptionNoTruncate(description) {
+    if (!description) return '';
+    
+    // Remove all \r characters
+    let formatted = description.replace(/\r/g, '');
+    
+    // Replace \n with <br>
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Replace multiple consecutive <br> with a maximum of two
+    formatted = formatted.replace(/(<br>){3,}/g, '<br><br>');
+    
+    return formatted;
+}
+
 // Event routes
 router.get('/events/:id', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
@@ -27,6 +62,11 @@ router.get('/events/:id', (req, res) => {
             console.error(err);
             return res.status(404).send('Event not found');
         }
+
+        // Format the event description based on admin status
+        event.description = event.is_admin ? 
+            event.description : 
+            formatDescriptionNoTruncate(event.description);
 
         // Check if user is banned from the organization
         db.get(`
@@ -759,6 +799,206 @@ router.post('/events/:id/unban/:userId', async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).send('Error unbanning participant');
+    }
+});
+
+// Event details route
+router.get('/:id', async (req, res) => {
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.session.userId;
+
+    try {
+        // Get event details with participant status and admin check
+        const event = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT e.*, 
+                       CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins 
+                           WHERE organization_id = e.organization_id AND user_id = ?
+                       ) THEN 1 ELSE 0 END as is_admin
+                FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                WHERE e.id = ?
+            `, [userId, userId, eventId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!event) {
+            return res.status(404).send('Event not found');
+        }
+
+        // Format the event description based on admin status
+        event.description = event.is_admin ? 
+            event.description : 
+            formatDescriptionNoTruncate(event.description);
+
+        // Check if user is banned from the event
+        const isBanned = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM event_bans
+                WHERE event_id = ? AND user_id = ? AND status = 'active'
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (isBanned && !event.is_admin) {
+            return res.status(403).send('You are banned from this event');
+        }
+
+        // Get event participants
+        const participants = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT u.id, COALESCE(u.username, u.discordname) as display_name,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins 
+                           WHERE organization_id = e.organization_id AND user_id = u.id
+                       ) THEN 1 ELSE 0 END as is_admin,
+                       CASE WHEN eb.status = 'active' THEN 1 ELSE 0 END as is_banned,
+                       pes.mmr as mmr
+                FROM users u
+                JOIN event_participants ep ON u.id = ep.user_id
+                JOIN events e ON e.id = ep.event_id
+                LEFT JOIN event_bans eb ON eb.event_id = e.id AND eb.user_id = u.id
+                LEFT JOIN player_event_stats pes ON pes.event_id = e.id AND pes.user_id = u.id
+                WHERE ep.event_id = ?
+                AND (? = 1 OR NOT EXISTS (
+                    SELECT 1 FROM event_bans 
+                    WHERE event_id = e.id AND user_id = u.id AND status = 'active'
+                ))
+                ORDER BY u.username
+            `, [eventId, event.is_admin], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
+        // Get event matches
+        const matches = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT m.*, 
+                       GROUP_CONCAT(u.username) as player_names,
+                       GROUP_CONCAT(u.id) as player_ids,
+                       GROUP_CONCAT(mp.position) as positions,
+                       GROUP_CONCAT(mp.final_score) as final_scores
+                FROM matches m
+                JOIN match_players mp ON m.id = mp.match_id
+                JOIN users u ON mp.user_id = u.id
+                WHERE m.event_id = ?
+                GROUP BY m.id
+                ORDER BY m.created_at DESC
+            `, [eventId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
+        res.render('event', {
+            event,
+            participants,
+            matches,
+            userId,
+            isParticipant: event.is_participant,
+            isAdmin: event.is_admin
+        });
+    } catch (error) {
+        console.error('Error fetching event details:', error);
+        res.status(500).send('Error fetching event details');
+    }
+});
+
+// Organization events route
+router.get('/organization/:id', async (req, res) => {
+    const db = req.app.locals.db;
+    const orgId = req.params.id;
+    const userId = req.session.userId;
+
+    try {
+        // Get organization events
+        const events = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT e.*,
+                       COUNT(DISTINCT ep.user_id) as participant_count,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins 
+                           WHERE organization_id = e.organization_id AND user_id = ?
+                       ) THEN 1 ELSE 0 END as is_admin
+                FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id
+                WHERE e.organization_id = ?
+                AND (? = 1 OR NOT EXISTS (
+                    SELECT 1 FROM event_bans 
+                    WHERE event_id = e.id AND user_id = ? AND status = 'active'
+                ))
+                GROUP BY e.id
+                ORDER BY e.start_date DESC
+            `, [userId, orgId, userId, userId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
+        // Format descriptions for events
+        events.forEach(event => {
+            event.description = formatDescription(event.description);
+        });
+
+        res.render('events', {
+            events,
+            userId,
+            organizationId: orgId
+        });
+    } catch (error) {
+        console.error('Error fetching organization events:', error);
+        res.status(500).send('Error fetching organization events');
+    }
+});
+
+// Update event details
+router.post('/events/:id/update', async (req, res) => {
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.session.userId;
+    const { name, description } = req.body;
+
+    try {
+        // Check if user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM events e
+                JOIN organization_admins oa ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can update events');
+        }
+
+        // Update event
+        await new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE events SET name = ?, description = ? WHERE id = ?',
+                [name, description, eventId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.redirect(`/events/${eventId}`);
+    } catch (error) {
+        console.error('Error updating event:', error);
+        res.status(500).send('Error updating event');
     }
 });
 

@@ -11,8 +11,22 @@
                     <p class="text-muted">
                         Organization: <a href="/organizations/<%= event.organization_id %>"><%= event.organization_name %></a>
                     </p>
-                    <% if (event.description) { %>
-                        <p><%= event.description %></p>
+                    <% if (event.is_admin) { %>
+                        <form action="/events/<%= event.id %>/update" method="POST" class="mb-4">
+                            <div class="mb-3">
+                                <label for="name" class="form-label">Event Name</label>
+                                <input type="text" class="form-control" id="name" name="name" value="<%= event.name %>" required>
+                            </div>
+                            <div class="mb-3">
+                                <label for="description" class="form-label">Description</label>
+                                <textarea class="form-control" id="description" name="description" rows="3"><%= event.description || '' %></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary">Update Event</button>
+                        </form>
+                    <% } else { %>
+                        <% if (event.description) { %>
+                            <p><%- event.description %></p>
+                        <% } %>
                     <% } %>
                     
                     <h5 class="mt-4">Participants</h5>

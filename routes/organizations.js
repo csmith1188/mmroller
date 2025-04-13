@@ -1,6 +1,41 @@
 const express = require('express');
 const router = express.Router();
 
+function formatDescription(description) {
+    if (!description) return '';
+    
+    // Remove all \r characters
+    let formatted = description.replace(/\r/g, '');
+    
+    // Replace \n with <br>
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Replace multiple consecutive <br> with a maximum of two
+    formatted = formatted.replace(/(<br>){3,}/g, '<br><br>');
+    
+    // Truncate to 128 characters and add ellipsis if needed
+    if (formatted.length > 128) {
+        formatted = formatted.substring(0, 128).trim() + '...';
+    }
+    
+    return formatted;
+}
+
+function formatDescriptionNoTruncate(description) {
+    if (!description) return '';
+    
+    // Remove all \r characters
+    let formatted = description.replace(/\r/g, '');
+    
+    // Replace \n with <br>
+    formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Replace multiple consecutive <br> with a maximum of two
+    formatted = formatted.replace(/(<br>){3,}/g, '<br><br>');
+    
+    return formatted;
+}
+
 // Organization routes
 router.get('/organizations/new', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
@@ -102,6 +137,13 @@ router.get('/organizations/:id', (req, res) => {
             return res.status(404).send('Organization not found');
         }
 
+        // Format the organization description based on admin status
+        organization.description = organization.is_admin ? 
+            organization.description : 
+            formatDescriptionNoTruncate(organization.description);
+
+        console.log(organization);
+
         // Check if user is banned from the organization
         db.get(`
             SELECT 1 FROM organization_bans
@@ -159,6 +201,11 @@ router.get('/organizations/:id', (req, res) => {
                         console.error(err);
                         return res.status(500).send('Error fetching events');
                     }
+
+                    // Format event descriptions
+                    events.forEach(event => {
+                        event.description = formatDescription(event.description);
+                    });
 
                     res.render('organization', {
                         organization,
@@ -661,6 +708,13 @@ router.get('/organizations', (req, res) => {
             return res.status(500).send('Error fetching user organizations');
         }
 
+        // Format descriptions for user's organizations
+        userOrgs.forEach(org => {
+            org.description = formatDescription(org.description);
+        });
+
+        console.log(userOrgs);
+
         // Get total count of user's organizations for pagination
         db.get(`
             SELECT COUNT(DISTINCT o.id) as count
@@ -702,6 +756,13 @@ router.get('/organizations', (req, res) => {
                     console.error(err);
                     return res.status(500).send('Error fetching all organizations');
                 }
+
+                // Format descriptions for other organizations
+                otherOrgs.forEach(org => {
+                    org.description = formatDescription(org.description);
+                });
+
+                console.log(otherOrgs);
 
                 // Get total count of other organizations for pagination
                 db.get(`
