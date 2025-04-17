@@ -2,7 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const passport = require('passport');
-const { generateVerificationToken, sendVerificationEmail } = require('../services/email');
+const { generateVerificationToken, sendVerificationEmail, sendPasswordResetEmail } = require('../services/email');
 
 // Middleware to redirect logged-in users away from auth pages
 const redirectIfLoggedIn = (req, res, next) => {
@@ -239,6 +239,157 @@ router.post('/resend-verification', async (req, res) => {
     } catch (error) {
         console.error('Resend verification error:', error);
         res.status(500).json({ error: 'Error sending verification email' });
+    }
+});
+
+// Forgot password routes
+router.get('/forgot-password', redirectIfLoggedIn, (req, res) => {
+    res.render('forgot-password');
+});
+
+router.post('/forgot-password', redirectIfLoggedIn, async (req, res) => {
+    const { email } = req.body;
+    const db = req.app.locals.db;
+    
+    try {
+        // Check if user exists
+        const user = await new Promise((resolve, reject) => {
+            db.get('SELECT * FROM users WHERE email = ?', [email], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+        
+        if (!user) {
+            // Don't reveal if email exists or not
+            return res.render('forgot-password', {
+                success: 'If an account exists with that email, a password reset link has been sent.'
+            });
+        }
+        
+        // Generate reset token
+        const resetToken = generateVerificationToken();
+        
+        // Store reset token and expiry in database
+        const expiry = new Date();
+        expiry.setHours(expiry.getHours() + 1); // Token expires in 1 hour
+        
+        await new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE users SET reset_token = ?, reset_token_expiry = ? WHERE id = ?',
+                [resetToken, expiry.toISOString(), user.id],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+        
+        // Send reset email
+        const emailSent = await sendPasswordResetEmail(email, resetToken);
+        if (!emailSent) {
+            throw new Error('Failed to send reset email');
+        }
+        
+        res.render('forgot-password', {
+            success: 'If an account exists with that email, a password reset link has been sent.'
+        });
+    } catch (error) {
+        console.error('Password reset error:', error);
+        res.render('forgot-password', {
+            error: 'An error occurred. Please try again.'
+        });
+    }
+});
+
+// Reset password routes
+router.get('/reset-password', redirectIfLoggedIn, async (req, res) => {
+    const { token } = req.query;
+    const db = req.app.locals.db;
+    
+    if (!token) {
+        return res.status(400).render('error', { message: 'Invalid reset link' });
+    }
+    
+    try {
+        // Check if token exists and is not expired
+        const user = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT * FROM users WHERE reset_token = ? AND reset_token_expiry > datetime("now")',
+                [token],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+        
+        if (!user) {
+            return res.status(400).render('error', { message: 'Invalid or expired reset link' });
+        }
+        
+        res.render('reset-password', { token });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(500).render('error', { message: 'Error processing reset request' });
+    }
+});
+
+router.post('/reset-password', redirectIfLoggedIn, async (req, res) => {
+    const { token, password, confirmPassword } = req.body;
+    const db = req.app.locals.db;
+    
+    if (password !== confirmPassword) {
+        return res.render('reset-password', {
+            token,
+            error: 'Passwords do not match'
+        });
+    }
+    
+    try {
+        // Check if token exists and is not expired
+        const user = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT * FROM users WHERE reset_token = ? AND reset_token_expiry > datetime("now")',
+                [token],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+        
+        if (!user) {
+            return res.status(400).render('error', { message: 'Invalid or expired reset link' });
+        }
+        
+        // Hash new password
+        const hash = await new Promise((resolve, reject) => {
+            bcrypt.hash(password, 10, (err, hash) => {
+                if (err) reject(err);
+                resolve(hash);
+            });
+        });
+        
+        // Update password and clear reset token
+        await new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expiry = NULL WHERE id = ?',
+                [hash, user.id],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+        
+        res.render('message', {
+            title: 'Password Reset',
+            message: 'Your password has been reset successfully. You can now login with your new password.'
+        });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(500).render('error', { message: 'Error resetting password' });
     }
 });
 

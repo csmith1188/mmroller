@@ -2,66 +2,56 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
 
-// Database path
 const dbPath = path.join(__dirname, 'database.db');
 const migrationsDir = path.join(__dirname, 'migrations');
-
-// Create database connection
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Error opening database:', err);
-        process.exit(1);
-    }
-    console.log('Database opened successfully');
-});
+const db = new sqlite3.Database(dbPath);
 
 // Get list of migration files
-fs.readdir(migrationsDir, (err, files) => {
-    if (err) {
-        console.error('Error reading migrations directory:', err);
+const migrationFiles = fs.readdirSync(migrationsDir)
+    .filter(file => file.endsWith('.sql'))
+    .sort();
+
+console.log(`Found ${migrationFiles.length} migration files`);
+
+// Execute migrations in sequence
+const executeNextMigration = (index) => {
+    if (index >= migrationFiles.length) {
+        console.log('All migrations completed');
         db.close();
-        process.exit(1);
+        return;
     }
 
-    // Filter and sort SQL files
-    const migrationFiles = files
-        .filter(file => file.endsWith('.sql'))
-        .sort();
+    const migrationFile = migrationFiles[index];
+    console.log(`Executing migration: ${migrationFile}`);
 
-    // Execute migrations in sequence
-    const executeMigrations = (index) => {
-        if (index >= migrationFiles.length) {
-            console.log('All migrations completed');
-            db.close();
-            return;
-        }
+    const migrationSQL = fs.readFileSync(path.join(migrationsDir, migrationFile), 'utf8');
 
-        const file = migrationFiles[index];
-        console.log(`Executing migration: ${file}`);
-        
-        // Read and execute migration file
-        const migrationPath = path.join(migrationsDir, file);
-        const sql = fs.readFileSync(migrationPath, 'utf8');
+    db.serialize(() => {
+        db.run('BEGIN TRANSACTION');
 
-        db.serialize(() => {
-            db.run('BEGIN TRANSACTION');
+        // Execute migration SQL
+        db.exec(migrationSQL, (err) => {
+            if (err) {
+                console.error(`Error executing migration ${migrationFile}:`, err);
+                db.run('ROLLBACK');
+                db.close();
+                process.exit(1);
+            }
 
-            // Execute migration SQL
-            db.exec(sql, (err) => {
+            db.run('COMMIT', (err) => {
                 if (err) {
-                    console.error(`Error executing migration ${file}:`, err);
+                    console.error(`Error committing migration ${migrationFile}:`, err);
                     db.run('ROLLBACK');
                     db.close();
                     process.exit(1);
                 }
 
-                db.run('COMMIT');
-                console.log(`Successfully executed migration: ${file}`);
-                executeMigrations(index + 1);
+                console.log(`Completed migration: ${migrationFile}`);
+                executeNextMigration(index + 1);
             });
         });
-    };
+    });
+};
 
-    // Start executing migrations
-    executeMigrations(0);
-}); 
+// Start executing migrations
+executeNextMigration(0); 

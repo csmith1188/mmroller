@@ -2,7 +2,6 @@
 CREATE TABLE IF NOT EXISTS temp_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
-    discordname TEXT,
     email TEXT UNIQUE,
     password_hash TEXT,
     discord_id TEXT UNIQUE,
@@ -15,8 +14,8 @@ CREATE TABLE IF NOT EXISTS temp_users (
 );
 
 -- Copy data from old table to new table
-INSERT INTO temp_users (id, username, discordname, email, password_hash, discord_id, avatar, created_at, updated_at, verified)
-SELECT id, username, discordname, email, password_hash, discord_id, avatar, created_at, updated_at, verified
+INSERT INTO temp_users (id, username, email, password_hash, discord_id, avatar, created_at, updated_at, verified)
+SELECT id, username, email, password_hash, discord_id, avatar, created_at, updated_at, verified
 FROM users;
 
 -- Drop old table

@@ -1,4 +1,3 @@
-- password change
 - change username, short profile description
 - custom fields per participant
 - custom fields per match per player

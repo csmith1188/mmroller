@@ -42,7 +42,34 @@ async function sendVerificationEmail(email, token) {
     }
 }
 
+// Send password reset email
+async function sendPasswordResetEmail(email, token) {
+    const resetUrl = `${process.env.BASE_URL}/reset-password?token=${token}`;
+    
+    const mailOptions = {
+        from: process.env.SMTP_FROM,
+        to: email,
+        subject: 'Reset your MMRoller password',
+        html: `
+            <h1>Password Reset Request</h1>
+            <p>You have requested to reset your password. Click the link below to set a new password:</p>
+            <a href="${resetUrl}">${resetUrl}</a>
+            <p>If you did not request this password reset, you can safely ignore this email.</p>
+            <p>This link will expire in 1 hour.</p>
+        `
+    };
+    
+    try {
+        await transporter.sendMail(mailOptions);
+        return true;
+    } catch (error) {
+        console.error('Error sending password reset email:', error);
+        return false;
+    }
+}
+
 module.exports = {
     generateVerificationToken,
-    sendVerificationEmail
+    sendVerificationEmail,
+    sendPasswordResetEmail
 }; 
