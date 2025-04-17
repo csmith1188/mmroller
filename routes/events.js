@@ -37,29 +37,31 @@ function formatDescriptionNoTruncate(description) {
 }
 
 // Event routes
-router.get('/events/:id', (req, res) => {
-    const requireLogin = req.app.locals.requireLogin;
+router.get('/events/:id', async (req, res) => {
     const db = req.app.locals.db;
     const eventId = req.params.id;
     const userId = req.session.userId;
-    
-    // Get event details with organization info and participant status
-    db.get(`
-        SELECT e.*, 
-               o.name as organization_name,
-               o.id as organization_id,
-               CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant,
-               CASE WHEN EXISTS (
-                   SELECT 1 FROM organization_admins 
-                   WHERE organization_id = o.id AND user_id = ?
-               ) THEN 1 ELSE 0 END as is_admin
-        FROM events e
-        JOIN organizations o ON e.organization_id = o.id
-        LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
-        WHERE e.id = ?
-    `, [userId, userId, eventId], (err, event) => {
-        if (err || !event) {
-            console.error(err);
+
+    try {
+        // Get event details with participant status and admin check
+        const event = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT e.*, 
+                       CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins 
+                           WHERE organization_id = e.organization_id AND user_id = ?
+                       ) THEN 1 ELSE 0 END as is_admin
+                FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                WHERE e.id = ?
+            `, [userId, userId, eventId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!event) {
             return res.status(404).send('Event not found');
         }
 
@@ -68,143 +70,127 @@ router.get('/events/:id', (req, res) => {
             event.description : 
             formatDescriptionNoTruncate(event.description);
 
-        // Check if user is banned from the organization
-        db.get(`
-            SELECT 1 FROM organization_bans
-            WHERE organization_id = ? AND user_id = ? AND status = 'active'
-        `, [event.organization_id, userId], (err, isOrgBanned) => {
-            if (err) {
-                console.error(err);
-                return res.status(500).send('Error checking organization ban status');
-            }
-
-            if (isOrgBanned && !event.is_admin) {
-                return res.status(403).send('You are banned from this organization');
-            }
-
-            // Check if user is banned from the event
+        // Check if user is banned from the event
+        const isBanned = await new Promise((resolve, reject) => {
             db.get(`
                 SELECT 1 FROM event_bans
                 WHERE event_id = ? AND user_id = ? AND status = 'active'
-            `, [eventId, userId], (err, isEventBanned) => {
-                if (err) {
-                    console.error(err);
-                    return res.status(500).send('Error checking event ban status');
-                }
-
-                if (isEventBanned && !event.is_admin) {
-                    return res.status(403).send('You are banned from this event');
-                }
-            
-                // Get event participants
-                db.all(`
-                    SELECT u.id, u.username as display_name,
-                           pes.mmr, pes.matches_played, pes.wins, pes.losses,
-                           CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
-                           CASE WHEN eb.status = 'active' THEN 1 ELSE 0 END as is_banned
-                    FROM users u
-                    JOIN event_participants ep ON u.id = ep.user_id
-                    LEFT JOIN player_event_stats pes ON pes.event_id = ep.event_id AND pes.user_id = u.id
-                    JOIN events e ON e.id = ep.event_id
-                    JOIN organizations o ON o.id = e.organization_id
-                    LEFT JOIN event_bans eb ON eb.event_id = e.id AND eb.user_id = u.id
-                    WHERE ep.event_id = ?
-                    AND (? = 1 OR NOT EXISTS (
-                        SELECT 1 FROM event_bans 
-                        WHERE event_id = e.id AND user_id = u.id AND status = 'active'
-                    ))
-                    ORDER BY pes.mmr DESC NULLS LAST
-                `, [eventId, event.is_admin], (err, participants) => {
-                    if (err) {
-                        console.error(err);
-                        return res.status(500).send('Error fetching participants');
-                    }
-                    
-                    // Format stats for display
-                    const participantsWithStats = participants.map(participant => ({
-                        ...participant,
-                        mmr: participant.mmr || 1500,
-                        matches_played: participant.matches_played || 0,
-                        wins: participant.wins || 0,
-                        losses: participant.losses || 0
-                    }));
-                    
-                    // Get event matches with player information
-                    db.all(`
-                        SELECT m.*, 
-                               GROUP_CONCAT(u.username) as player_names,
-                               GROUP_CONCAT(u.id) as player_ids,
-                               GROUP_CONCAT(mp.position) as positions,
-                               GROUP_CONCAT(mp.final_score) as final_scores
-                        FROM matches m
-                        JOIN match_players mp ON m.id = mp.match_id
-                        JOIN users u ON mp.user_id = u.id
-                        WHERE m.event_id = ?
-                        GROUP BY m.id
-                        ORDER BY m.created_at DESC
-                    `, [eventId], (err, matches) => {
-                        if (err) {
-                            console.error(err);
-                            return res.status(500).send('Error fetching matches');
-                        }
-                        
-                        // Process matches to split concatenated fields
-                        const processedMatches = matches.map(match => ({
-                            ...match,
-                            player_names: match.player_names ? match.player_names.split(',') : [],
-                            player_ids: match.player_ids ? match.player_ids.split(',').map(Number) : [],
-                            positions: match.positions ? match.positions.split(',').map(Number) : [],
-                            final_scores: match.final_scores ? match.final_scores.split(',').map(Number) : []
-                        }));
-                        
-                        // Get event applications if user is admin
-                        if (event.is_admin) {
-                            db.all(`
-                                SELECT ea.*, u.username as display_name
-                                FROM event_applications ea
-                                JOIN users u ON ea.user_id = u.id
-                                WHERE ea.event_id = ?
-                                ORDER BY ea.applied_at DESC
-                            `, [eventId], (err, applications) => {
-                                if (err) {
-                                    console.error(err);
-                                    return res.status(500).send('Error fetching applications');
-                                }
-                                
-                                res.render('event', {
-                                    event,
-                                    participants: participantsWithStats,
-                                    matches: processedMatches,
-                                    applications,
-                                    userId
-                                });
-                            });
-                        } else {
-                            // Check if user has already applied
-                            db.get(`
-                                SELECT 1 FROM event_applications
-                                WHERE event_id = ? AND user_id = ?
-                            `, [eventId, userId], (err, hasApplied) => {
-                                if (err) {
-                                    console.error(err);
-                                    return res.status(500).send('Error checking application status');
-                                }
-                                
-                                res.render('event', {
-                                    event,
-                                    participants: participantsWithStats,
-                                    matches: processedMatches,
-                                    applications: [],
-                                    userId,
-                                    hasApplied: !!hasApplied
-                                });
-                            });
-                        }
-                    });
-                });
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
             });
         });
-    });
+
+        if (isBanned && !event.is_admin) {
+            return res.status(403).send('You are banned from this event');
+        }
+
+        // Get event participants
+        const participants = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT u.id, u.username as display_name,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins 
+                           WHERE organization_id = e.organization_id AND user_id = u.id
+                       ) THEN 1 ELSE 0 END as is_admin,
+                       CASE WHEN eb.status = 'active' THEN 1 ELSE 0 END as is_banned,
+                       pes.mmr as mmr
+                FROM users u
+                JOIN event_participants ep ON u.id = ep.user_id
+                JOIN events e ON e.id = ep.event_id
+                LEFT JOIN event_bans eb ON eb.event_id = e.id AND eb.user_id = u.id
+                LEFT JOIN player_event_stats pes ON pes.event_id = e.id AND pes.user_id = u.id
+                WHERE ep.event_id = ?
+                AND (? = 1 OR NOT EXISTS (
+                    SELECT 1 FROM event_bans 
+                    WHERE event_id = e.id AND user_id = u.id AND status = 'active'
+                ))
+                ORDER BY u.username
+            `, [eventId, event.is_admin], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
+        // Get event matches
+        const matches = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT m.*, 
+                       GROUP_CONCAT(u.username) as player_names,
+                       GROUP_CONCAT(u.id) as player_ids,
+                       GROUP_CONCAT(mp.position) as positions,
+                       GROUP_CONCAT(mp.final_score) as final_scores
+                FROM matches m
+                JOIN match_players mp ON m.id = mp.match_id
+                JOIN users u ON mp.user_id = u.id
+                WHERE m.event_id = ?
+                GROUP BY m.id
+                ORDER BY m.created_at DESC
+            `, [eventId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
+        // Get custom fields if user is admin
+        let customFields = [];
+        if (event.is_admin) {
+            customFields = await new Promise((resolve, reject) => {
+                db.all(`
+                    SELECT id, field_name, field_description, is_required, is_private
+                    FROM event_custom_fields
+                    WHERE event_id = ?
+                    ORDER BY created_at ASC
+                `, [eventId], (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                });
+            });
+        }
+
+        // Get applications if user is admin
+        let applications = [];
+        if (event.is_admin) {
+            applications = await new Promise((resolve, reject) => {
+                db.all(`
+                    SELECT ea.*, u.username as display_name
+                    FROM event_applications ea
+                    JOIN users u ON ea.user_id = u.id
+                    WHERE ea.event_id = ?
+                    ORDER BY ea.applied_at DESC
+                `, [eventId], (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                });
+            });
+        }
+
+        // Check if user has already applied
+        const hasApplied = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM event_applications
+                WHERE event_id = ? AND user_id = ?
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        res.render('event', {
+            event,
+            participants,
+            matches,
+            customFields,
+            applications,
+            hasApplied,
+            userId,
+            isParticipant: event.is_participant,
+            isAdmin: event.is_admin
+        });
+    } catch (error) {
+        console.error('Error fetching event details:', error);
+        res.status(500).send('Error fetching event details');
+    }
 });
 
 // Event application route
@@ -808,116 +794,6 @@ router.post('/events/:id/unban/:userId', async (req, res) => {
     }
 });
 
-// Event details route
-router.get('/:id', async (req, res) => {
-    const db = req.app.locals.db;
-    const eventId = req.params.id;
-    const userId = req.session.userId;
-
-    try {
-        // Get event details with participant status and admin check
-        const event = await new Promise((resolve, reject) => {
-            db.get(`
-                SELECT e.*, 
-                       CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant,
-                       CASE WHEN EXISTS (
-                           SELECT 1 FROM organization_admins 
-                           WHERE organization_id = e.organization_id AND user_id = ?
-                       ) THEN 1 ELSE 0 END as is_admin
-                FROM events e
-                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
-                WHERE e.id = ?
-            `, [userId, userId, eventId], (err, row) => {
-                if (err) reject(err);
-                resolve(row);
-            });
-        });
-
-        if (!event) {
-            return res.status(404).send('Event not found');
-        }
-
-        // Format the event description based on admin status
-        event.description = event.is_admin ? 
-            event.description : 
-            formatDescriptionNoTruncate(event.description);
-
-        // Check if user is banned from the event
-        const isBanned = await new Promise((resolve, reject) => {
-            db.get(`
-                SELECT 1 FROM event_bans
-                WHERE event_id = ? AND user_id = ? AND status = 'active'
-            `, [eventId, userId], (err, row) => {
-                if (err) reject(err);
-                resolve(!!row);
-            });
-        });
-
-        if (isBanned && !event.is_admin) {
-            return res.status(403).send('You are banned from this event');
-        }
-
-        // Get event participants
-        const participants = await new Promise((resolve, reject) => {
-            db.all(`
-                SELECT u.id, u.username as display_name,
-                       CASE WHEN EXISTS (
-                           SELECT 1 FROM organization_admins 
-                           WHERE organization_id = e.organization_id AND user_id = u.id
-                       ) THEN 1 ELSE 0 END as is_admin,
-                       CASE WHEN eb.status = 'active' THEN 1 ELSE 0 END as is_banned,
-                       pes.mmr as mmr
-                FROM users u
-                JOIN event_participants ep ON u.id = ep.user_id
-                JOIN events e ON e.id = ep.event_id
-                LEFT JOIN event_bans eb ON eb.event_id = e.id AND eb.user_id = u.id
-                LEFT JOIN player_event_stats pes ON pes.event_id = e.id AND pes.user_id = u.id
-                WHERE ep.event_id = ?
-                AND (? = 1 OR NOT EXISTS (
-                    SELECT 1 FROM event_bans 
-                    WHERE event_id = e.id AND user_id = u.id AND status = 'active'
-                ))
-                ORDER BY u.username
-            `, [eventId, event.is_admin], (err, rows) => {
-                if (err) reject(err);
-                resolve(rows);
-            });
-        });
-
-        // Get event matches
-        const matches = await new Promise((resolve, reject) => {
-            db.all(`
-                SELECT m.*, 
-                       GROUP_CONCAT(u.username) as player_names,
-                       GROUP_CONCAT(u.id) as player_ids,
-                       GROUP_CONCAT(mp.position) as positions,
-                       GROUP_CONCAT(mp.final_score) as final_scores
-                FROM matches m
-                JOIN match_players mp ON m.id = mp.match_id
-                JOIN users u ON mp.user_id = u.id
-                WHERE m.event_id = ?
-                GROUP BY m.id
-                ORDER BY m.created_at DESC
-            `, [eventId], (err, rows) => {
-                if (err) reject(err);
-                resolve(rows);
-            });
-        });
-
-        res.render('event', {
-            event,
-            participants,
-            matches,
-            userId,
-            isParticipant: event.is_participant,
-            isAdmin: event.is_admin
-        });
-    } catch (error) {
-        console.error('Error fetching event details:', error);
-        res.status(500).send('Error fetching event details');
-    }
-});
-
 // Organization events route
 router.get('/organization/:id', async (req, res) => {
     const db = req.app.locals.db;
@@ -1008,4 +884,354 @@ router.post('/events/:id/update', async (req, res) => {
     }
 });
 
-module.exports = router; 
+// Add custom field
+router.post('/events/:id/custom-fields', async (req, res) => {
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.session.userId;
+    const fields = req.body.fields;
+
+    try {
+        // Check if user is admin
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM events e
+                JOIN organization_admins oa ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can manage custom fields');
+        }
+
+        // Validate fields
+        for (const [fieldId, fieldData] of Object.entries(fields)) {
+            if (!fieldData.field_name || fieldData.field_name.trim() === '') {
+                return res.status(400).send('Field name is required');
+            }
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            // Process each field
+            for (const [fieldId, fieldData] of Object.entries(fields)) {
+                if (fieldId.startsWith('new_')) {
+                    // Insert new field
+                    await new Promise((resolve, reject) => {
+                        db.run(`
+                            INSERT INTO event_custom_fields (event_id, field_name, field_description, is_required, is_private)
+                            VALUES (?, ?, ?, ?, ?)
+                        `, [
+                            eventId,
+                            fieldData.field_name.trim(),
+                            fieldData.field_description ? fieldData.field_description.trim() : null,
+                            fieldData.is_required ? 1 : 0,
+                            fieldData.is_private ? 1 : 0
+                        ], (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        });
+                    });
+                } else {
+                    // Update existing field
+                    await new Promise((resolve, reject) => {
+                        db.run(`
+                            UPDATE event_custom_fields
+                            SET field_name = ?,
+                                field_description = ?,
+                                is_required = ?,
+                                is_private = ?
+                            WHERE id = ? AND event_id = ?
+                        `, [
+                            fieldData.field_name.trim(),
+                            fieldData.field_description ? fieldData.field_description.trim() : null,
+                            fieldData.is_required ? 1 : 0,
+                            fieldData.is_private ? 1 : 0,
+                            fieldId,
+                            eventId
+                        ], (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        });
+                    });
+                }
+            }
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/events/${eventId}`);
+        } catch (error) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error updating custom fields:', error);
+        res.status(500).send('Error updating custom fields');
+    }
+});
+
+// Update custom field
+router.post('/events/:id/custom-fields/:fieldId', async (req, res) => {
+    const db = req.app.locals.db;
+    const { id: eventId, fieldId } = req.params;
+    const { field_name, field_description, is_private, is_required } = req.body;
+
+    try {
+        // Check if user is admin
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, req.session.userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        await new Promise((resolve, reject) => {
+            db.run(`
+                UPDATE event_custom_fields
+                SET field_name = ?, field_description = ?, is_private = ?, is_required = ?
+                WHERE id = ? AND event_id = ?
+            `, [field_name, field_description, is_private ? 1 : 0, is_required ? 1 : 0, fieldId, eventId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.redirect(`/events/${eventId}`);
+    } catch (error) {
+        console.error('Error updating custom field:', error);
+        res.status(500).json({ error: 'Error updating custom field' });
+    }
+});
+
+// Delete custom field
+router.post('/events/:id/custom-fields/:fieldId/delete', async (req, res) => {
+    const db = req.app.locals.db;
+    const { id: eventId, fieldId } = req.params;
+
+    try {
+        // Check if user is admin
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, req.session.userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        await new Promise((resolve, reject) => {
+            db.run('DELETE FROM event_custom_fields WHERE id = ? AND event_id = ?', [fieldId, eventId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.redirect(`/events/${eventId}`);
+    } catch (error) {
+        console.error('Error deleting custom field:', error);
+        res.status(500).json({ error: 'Error deleting custom field' });
+    }
+});
+
+// View participant details
+router.get('/events/:id/participants/:userId', async (req, res) => {
+    const db = req.app.locals.db;
+    const { id: eventId, userId } = req.params;
+    const currentUserId = req.session.userId;
+    const isViewingOwnProfile = currentUserId === parseInt(userId);
+
+    try {
+        // Get participant details and check if current user is admin
+        const participant = await new Promise((resolve, reject) => {
+            const query = `
+                SELECT u.id, u.username as display_name, u.created_at,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins oa
+                           JOIN events e ON e.organization_id = oa.organization_id
+                           WHERE e.id = ? AND oa.user_id = ?
+                       ) THEN 1 ELSE 0 END as is_admin
+                FROM users u
+                JOIN event_participants ep ON u.id = ep.user_id
+                WHERE u.id = ? AND ep.event_id = ?
+            `;
+            
+            db.get(query, [eventId, currentUserId, userId, eventId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!participant) {
+            return res.status(404).render('error', { message: 'Participant not found' });
+        }
+
+        // Get custom fields and responses
+        const customFields = await new Promise((resolve, reject) => {
+            const query = `
+                SELECT 
+                    f.id,
+                    f.field_name,
+                    f.field_description,
+                    f.is_required,
+                    f.is_private,
+                    r.response
+                FROM event_custom_fields f
+                LEFT JOIN participant_custom_responses r 
+                    ON f.id = r.field_id 
+                    AND r.user_id = ?
+                    AND r.event_id = ?
+                WHERE f.event_id = ?
+                AND (
+                    ? = 1  -- Current user is admin
+                    OR ? = 1  -- Viewing own profile
+                    OR f.is_private = 0  -- Field is not private
+                )
+                ORDER BY f.id ASC
+            `;
+            
+            db.all(query, [
+                userId,
+                eventId,
+                eventId,
+                participant.is_admin,
+                isViewingOwnProfile
+            ], (err, rows) => {
+                if (err) reject(err);
+                console.log('Custom fields data:', JSON.stringify(rows, null, 2));
+                resolve(rows);
+            });
+        });
+
+        // Handle success/error messages from URL parameters
+        const messages = [];
+        if (req.query.success) {
+            messages.push({ type: 'success', text: req.query.success });
+        }
+        if (req.query.error) {
+            messages.push({ type: 'danger', text: req.query.error });
+        }
+
+        const templateData = {
+            participant,
+            customFields,
+            isViewingOwnProfile,
+            eventId,
+            userId,
+            isAdmin: participant.is_admin,
+            messages
+        };
+        console.log('Template data:', JSON.stringify(templateData, null, 2));
+
+        res.render('participant', templateData);
+    } catch (error) {
+        console.error('Error fetching participant details:', error);
+        res.status(500).render('error', { message: 'Error fetching participant details' });
+    }
+});
+
+// Update participant response
+router.post('/events/:id/participants/:userId/responses', async (req, res) => {
+    const db = req.app.locals.db;
+    const { id: eventId, userId } = req.params;
+    const currentUserId = req.session.userId;
+
+    if (currentUserId !== parseInt(userId)) {
+        return res.status(403).json({ error: 'Unauthorized' });
+    }
+
+    try {
+        const responses = req.body.responses;
+        
+        if (!responses) {
+            return res.status(400).json({ error: 'No responses provided' });
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            // Process each response
+            for (const [fieldId, response] of Object.entries(responses)) {
+                if (response === undefined || response === null || response.trim() === '') {
+                    continue;
+                }
+                
+                await new Promise((resolve, reject) => {
+                    const query = `
+                        INSERT INTO participant_custom_responses (event_id, user_id, field_id, response)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(event_id, user_id, field_id) DO UPDATE SET
+                            response = excluded.response,
+                            updated_at = CURRENT_TIMESTAMP
+                    `;
+                    
+                    db.run(query, [eventId, userId, fieldId, response], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+            }
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            // Redirect with success message
+            res.redirect(`/events/${eventId}/participants/${userId}?success=Responses saved successfully`);
+        } catch (error) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error updating participant response:', error);
+        res.redirect(`/events/${eventId}/participants/${userId}?error=Failed to save responses`);
+    }
+});
+
+module.exports = router;

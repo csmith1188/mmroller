@@ -1,3 +1,5 @@
+- user profile description
+- verify discorders can change username and description but not email
 - custom fields per participant
 - custom fields per match per player
 - custom fields foldout if too long

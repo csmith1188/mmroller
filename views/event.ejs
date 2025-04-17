@@ -29,6 +29,52 @@
                         <% } %>
                     <% } %>
                     
+                    <% if (event.is_admin) { %>
+                        <div class="card mt-4">
+                            <div class="card-header">
+                                <h5 class="mb-0">Participant Custom Details</h5>
+                            </div>
+                            <div class="card-body">
+                                <form id="customFieldsForm" action="/events/<%= event.id %>/custom-fields" method="POST">
+                                    <div id="customFieldsContainer">
+                                        <% if (customFields && customFields.length > 0) { %>
+                                            <% customFields.forEach((field, index) => { %>
+                                                <div class="custom-field mb-3" data-field-id="<%= field.id %>">
+                                                    <div class="d-flex justify-content-between align-items-center mb-2">
+                                                        <h6 class="mb-0">Field #<%= index + 1 %></h6>
+                                                        <button type="button" class="btn btn-sm btn-outline-danger remove-field">Remove</button>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Field Name</label>
+                                                        <input type="text" class="form-control" name="fields[<%= field.id %>][field_name]" value="<%= field.field_name %>" required>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Description (Optional)</label>
+                                                        <textarea class="form-control" name="fields[<%= field.id %>][field_description]" rows="2"><%= field.field_description || '' %></textarea>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" name="fields[<%= field.id %>][is_required]" id="required<%= field.id %>" <%= field.is_required ? 'checked' : '' %>>
+                                                            <label class="form-check-label" for="required<%= field.id %>">Required Field</label>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <div class="form-check">
+                                                            <input class="form-check-input" type="checkbox" name="fields[<%= field.id %>][is_private]" id="private<%= field.id %>" <%= field.is_private ? 'checked' : '' %>>
+                                                            <label class="form-check-label" for="private<%= field.id %>">Private Field (only visible to admins and the participant)</label>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            <% }); %>
+                                        <% } %>
+                                    </div>
+                                    <button type="button" class="btn btn-outline-primary" id="addFieldBtn">Add New Field</button>
+                                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                                </form>
+                            </div>
+                        </div>
+                    <% } %>
+                    
                     <h5 class="mt-4">Participants</h5>
                     <div class="table-responsive">
                         <table class="table table-hover">
@@ -47,7 +93,7 @@
                                 <% participants.forEach(participant => { %>
                                     <tr>
                                         <td>
-                                            <a href="/profile/<%= participant.id %>" class="text-decoration-none">
+                                            <a href="/events/<%= event.id %>/participants/<%= participant.id %>" class="text-decoration-none">
                                                 <%= participant.display_name %>
                                             </a>
                                         </td>
@@ -299,4 +345,64 @@
     </div>
 </div>
 
-<%- include('partials/footer') %> 
+<%- include('partials/footer') %>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const customFieldsForm = document.getElementById('customFieldsForm');
+    const customFieldsContainer = document.getElementById('customFieldsContainer');
+    const addFieldBtn = document.getElementById('addFieldBtn');
+    let fieldCount = <%- customFields ? customFields.length : 0 %>;
+
+    // Add new field
+    addFieldBtn.addEventListener('click', function() {
+        const newFieldId = 'new_' + Date.now();
+        const newField = document.createElement('div');
+        newField.className = 'custom-field mb-3';
+        newField.dataset.fieldId = newFieldId;
+        
+        newField.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <h6 class="mb-0">Field #${++fieldCount}</h6>
+                <button type="button" class="btn btn-sm btn-outline-danger remove-field">Remove</button>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Field Name</label>
+                <input type="text" class="form-control" name="fields[${newFieldId}][field_name]" required>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Description (Optional)</label>
+                <textarea class="form-control" name="fields[${newFieldId}][field_description]" rows="2"></textarea>
+            </div>
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="fields[${newFieldId}][is_required]" id="required${newFieldId}">
+                    <label class="form-check-label" for="required${newFieldId}">Required Field</label>
+                </div>
+            </div>
+            <div class="mb-3">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="fields[${newFieldId}][is_private]" id="private${newFieldId}">
+                    <label class="form-check-label" for="private${newFieldId}">Private Field (only visible to admins and the participant)</label>
+                </div>
+            </div>
+        `;
+        
+        customFieldsContainer.appendChild(newField);
+    });
+
+    // Remove field
+    customFieldsContainer.addEventListener('click', function(e) {
+        if (e.target.classList.contains('remove-field')) {
+            const field = e.target.closest('.custom-field');
+            field.remove();
+            // Update field numbers
+            const fields = customFieldsContainer.querySelectorAll('.custom-field');
+            fields.forEach((field, index) => {
+                field.querySelector('h6').textContent = `Field #${index + 1}`;
+            });
+            fieldCount = fields.length;
+        }
+    });
+});
+</script> 

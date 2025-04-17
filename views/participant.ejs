@@ -1,0 +1,66 @@
+<%- include('partials/header') %>
+
+<div class="container mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="mb-0"><%= participant.display_name %></h2>
+            <small class="text-muted">Joined on <%= new Date(participant.created_at).toLocaleDateString() %></small>
+        </div>
+        <div class="card-body">
+            <% if (messages && messages.length > 0) { %>
+                <% messages.forEach(function(message) { %>
+                    <div class="alert alert-<%= message.type %>">
+                        <%= message.text %>
+                    </div>
+                <% }); %>
+            <% } %>
+
+            <% if (customFields && customFields.length > 0) { %>
+                <form id="customFieldsForm" action="/events/<%= eventId %>/participants/<%= userId %>/responses" method="POST">
+                    <% customFields.forEach((field, index) => { %>
+                        <% if (isViewingOwnProfile || isAdmin || !field.is_private) { %>
+                            <div class="mb-3">
+                                <label for="field_<%= field.id %>" class="form-label">
+                                    <%= field.field_name %>
+                                    <% if (field.is_required) { %>
+                                        <span class="text-danger">*</span>
+                                    <% } %>
+                                    <% if (field.is_private) { %>
+                                        <span class="badge bg-secondary">Private</span>
+                                    <% } %>
+                                </label>
+                                <% if (field.field_description) { %>
+                                    <small class="text-muted d-block"><%= field.field_description %></small>
+                                <% } %>
+                                <% if (isViewingOwnProfile) { %>
+                                    <!-- Debug info -->
+                                    <div class="debug-info" style="display: none;">
+                                        Field ID: <%= field.id %><br>
+                                        Response: <%= field.response %><br>
+                                        Is Viewing Own Profile: <%= isViewingOwnProfile %><br>
+                                        Is Admin: <%= isAdmin %>
+                                    </div>
+                                    <input type="text" 
+                                           class="form-control" 
+                                           id="field_<%= field.id %>" 
+                                           name="responses[<%= field.id %>]" 
+                                           value="<%= field.response || '' %>"
+                                           <%= field.is_required ? 'required' : '' %>>
+                                <% } else { %>
+                                    <p class="form-control-plaintext"><%= field.response || 'Not provided' %></p>
+                                <% } %>
+                            </div>
+                        <% } %>
+                    <% }); %>
+                    <% if (isViewingOwnProfile) { %>
+                        <button type="submit" class="btn btn-primary">Save Responses</button>
+                    <% } %>
+                </form>
+            <% } else { %>
+                <p class="text-muted">No custom fields have been set up for this event.</p>
+            <% } %>
+        </div>
+    </div>
+</div>
+
+<%- include('partials/footer') %> 
