@@ -51,7 +51,7 @@ router.get('/profile', async (req, res) => {
         // Get user details
         const user = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT id, username, created_at, verified,
+                SELECT id, username, email, created_at, verified,
                        username as display_name,
                        CASE WHEN discord_id IS NOT NULL THEN 1 ELSE 0 END as is_discord_user,
                        CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 0 END as has_password,
@@ -148,17 +148,38 @@ router.post('/profile/edit', (req, res) => {
     const userId = req.session.userId;
     const { username, email } = req.body;
     
-    db.run(
-        'UPDATE users SET username = ?, email = ? WHERE id = ?',
-        [username, email, userId],
-        (err) => {
-            if (err) {
-                return res.status(500).render('error', { message: 'Error updating profile' });
-            }
-            
-            res.redirect('/profile');
+    // First get the current user data to check if email is being changed
+    db.get('SELECT email FROM users WHERE id = ?', [userId], (err, user) => {
+        if (err || !user) {
+            return res.status(500).render('error', { message: 'Error updating profile' });
         }
-    );
+        
+        // If email is being changed, unset verification status
+        const emailChanged = user.email !== email;
+        const verified = emailChanged ? 0 : undefined; // Only include verified in update if email changed
+        
+        const updateFields = ['username = ?', 'email = ?'];
+        const updateValues = [username, email];
+        
+        if (emailChanged) {
+            updateFields.push('verified = ?');
+            updateValues.push(0);
+        }
+        
+        updateValues.push(userId);
+        
+        db.run(
+            `UPDATE users SET ${updateFields.join(', ')} WHERE id = ?`,
+            updateValues,
+            (err) => {
+                if (err) {
+                    return res.status(500).render('error', { message: 'Error updating profile' });
+                }
+                
+                res.redirect('/profile');
+            }
+        );
+    });
 });
 
 // Change password routes
@@ -220,7 +241,7 @@ router.get('/profile/:id', async (req, res) => {
         // Get user details
         const user = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT id, username, created_at, verified,
+                SELECT id, username, email, created_at, verified,
                        username as display_name,
                        CASE WHEN discord_id IS NOT NULL THEN 1 ELSE 0 END as is_discord_user,
                        CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 0 END as has_password,

@@ -1,4 +1,3 @@
-- change username, short profile description
 - custom fields per participant
 - custom fields per match per player
 - custom fields foldout if too long
