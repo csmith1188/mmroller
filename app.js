@@ -70,70 +70,74 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Configure passport with Discord strategy
-passport.use(new DiscordStrategy({
-    clientID: process.env.DISCORD_CLIENT_ID,
-    clientSecret: process.env.DISCORD_CLIENT_SECRET,
-    callbackURL: process.env.DISCORD_CALLBACK_URL || 'http://localhost:3000/discord/callback',
-    scope: ['identify', 'email']
-}, async (accessToken, refreshToken, profile, done) => {
-    try {
-        const db = app.locals.db;
-        
-        // Create username with discriminator
-        const username = profile.username;
-        
-        // Check if user exists
-        db.get('SELECT * FROM users WHERE discord_id = ?', [profile.id], (err, user) => {
-            if (err) {
-                console.error('Database error:', err);
-                return done(err);
-            }
+// Configure passport with Discord strategy if credentials are available
+if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
+    passport.use(new DiscordStrategy({
+        clientID: process.env.DISCORD_CLIENT_ID,
+        clientSecret: process.env.DISCORD_CLIENT_SECRET,
+        callbackURL: process.env.DISCORD_CALLBACK_URL || 'http://localhost:3000/discord/callback',
+        scope: ['identify', 'email']
+    }, async (accessToken, refreshToken, profile, done) => {
+        try {
+            const db = app.locals.db;
             
-            if (user) {
-                console.log('Existing user found:', user);
-                // Update user's Discord info
-                db.run(`
-                    UPDATE users 
-                    SET discordname = ?, email = ?, avatar = ?, updated_at = datetime('now')
-                    WHERE discord_id = ?
-                `, [username, profile.email, profile.avatar, profile.id], (err) => {
-                    if (err) {
-                        console.error('Update error:', err);
-                        return done(err);
-                    }
-                    return done(null, user);
-                });
-            } else {
-                console.log('Creating new user');
-                // Create new user
-                db.run(`
-                    INSERT INTO users (discordname, email, discord_id, avatar, created_at)
-                    VALUES (?, ?, ?, ?, datetime('now'))
-                `, [username, profile.email, profile.id, profile.avatar], function(err) {
-                    if (err) {
-                        console.error('Insert error:', err);
-                        return done(err);
-                    }
-                    
-                    const newUser = {
-                        id: this.lastID,
-                        discordname: username,
-                        email: profile.email,
-                        discord_id: profile.id,
-                        avatar: profile.avatar
-                    };
-                    
-                    console.log('New user created:', newUser);
-                    return done(null, newUser);
-                });
-            }
-        });
-    } catch (err) {
-        console.error('Strategy error:', err);
-        return done(err);
-    }
-}));
+            // Create username with discriminator
+            const username = profile.username;
+            
+            // Check if user exists
+            db.get('SELECT * FROM users WHERE discord_id = ?', [profile.id], (err, user) => {
+                if (err) {
+                    console.error('Database error:', err);
+                    return done(err);
+                }
+                
+                if (user) {
+                    console.log('Existing user found:', user);
+                    // Update user's Discord info
+                    db.run(`
+                        UPDATE users 
+                        SET discordname = ?, email = ?, avatar = ?, updated_at = datetime('now')
+                        WHERE discord_id = ?
+                    `, [username, profile.email, profile.avatar, profile.id], (err) => {
+                        if (err) {
+                            console.error('Update error:', err);
+                            return done(err);
+                        }
+                        return done(null, user);
+                    });
+                } else {
+                    console.log('Creating new user');
+                    // Create new user
+                    db.run(`
+                        INSERT INTO users (discordname, email, discord_id, avatar, created_at)
+                        VALUES (?, ?, ?, ?, datetime('now'))
+                    `, [username, profile.email, profile.id, profile.avatar], function(err) {
+                        if (err) {
+                            console.error('Insert error:', err);
+                            return done(err);
+                        }
+                        
+                        const newUser = {
+                            id: this.lastID,
+                            discordname: username,
+                            email: profile.email,
+                            discord_id: profile.id,
+                            avatar: profile.avatar
+                        };
+                        
+                        console.log('New user created:', newUser);
+                        return done(null, newUser);
+                    });
+                }
+            });
+        } catch (err) {
+            console.error('Strategy error:', err);
+            return done(err);
+        }
+    }));
+} else {
+    console.log('Discord OAuth credentials not found. Discord login is disabled.');
+}
 
 // Serialize and deserialize user
 passport.serializeUser((user, done) => {

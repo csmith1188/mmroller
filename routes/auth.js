@@ -13,21 +13,22 @@ const redirectIfLoggedIn = (req, res, next) => {
 
 // Login routes
 router.get('/login', redirectIfLoggedIn, (req, res) => {
-    res.render('login', { error: null });
+    const discordEnabled = !!(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET);
+    res.render('login', { error: null, discordEnabled });
 });
 
 router.post('/login', redirectIfLoggedIn, (req, res) => {
-    const { username, password } = req.body;
+    const { email, password } = req.body;
     const db = req.app.locals.db;
     
-    db.get('SELECT * FROM users WHERE username = ? OR discordname = ?', [username, username], (err, user) => {
+    db.get('SELECT * FROM users WHERE email = ?', [email], (err, user) => {
         if (err) {
             console.error('Login error:', err);
             return res.render('login', { error: 'Error during login. Please try again.' });
         }
         
         if (!user) {
-            return res.render('login', { error: 'Invalid username or password' });
+            return res.render('login', { error: 'Invalid email or password' });
         }
         
         bcrypt.compare(password, user.password_hash, (err, result) => {
@@ -37,7 +38,7 @@ router.post('/login', redirectIfLoggedIn, (req, res) => {
             }
             
             if (!result) {
-                return res.render('login', { error: 'Invalid username or password' });
+                return res.render('login', { error: 'Invalid email or password' });
             }
             
             req.login(user, (err) => {
