@@ -171,29 +171,29 @@ router.post('/profile/change-password', (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const userId = req.session.userId;
-    const { current_password, new_password, confirm_password } = req.body;
+    const { currentPassword, newPassword, confirmPassword } = req.body;
     
-    if (new_password !== confirm_password) {
+    if (newPassword !== confirmPassword) {
         return res.render('change-password', { error: 'New passwords do not match' });
     }
     
-    db.get('SELECT password FROM users WHERE id = ?', [userId], (err, user) => {
+    db.get('SELECT password_hash FROM users WHERE id = ?', [userId], (err, user) => {
         if (err || !user) {
             return res.redirect('/login');
         }
         
-        bcrypt.compare(current_password, user.password, (err, result) => {
+        bcrypt.compare(currentPassword, user.password_hash, (err, result) => {
             if (err || !result) {
                 return res.render('change-password', { error: 'Current password is incorrect' });
             }
             
-            bcrypt.hash(new_password, 10, (err, hash) => {
+            bcrypt.hash(newPassword, 10, (err, hash) => {
                 if (err) {
                     return res.status(500).render('error', { message: 'Error hashing password' });
                 }
                 
                 db.run(
-                    'UPDATE users SET password = ? WHERE id = ?',
+                    'UPDATE users SET password_hash = ? WHERE id = ?',
                     [hash, userId],
                     (err) => {
                         if (err) {

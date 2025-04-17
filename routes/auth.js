@@ -21,31 +21,32 @@ router.get('/login', redirectIfLoggedIn, (req, res) => {
 router.post('/login', redirectIfLoggedIn, (req, res) => {
     const { email, password } = req.body;
     const db = req.app.locals.db;
+    const discordEnabled = !!(process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET);
     
     db.get('SELECT * FROM users WHERE email = ?', [email], (err, user) => {
         if (err) {
             console.error('Login error:', err);
-            return res.render('login', { error: 'Error during login. Please try again.' });
+            return res.render('login', { error: 'Error during login. Please try again.', discordEnabled });
         }
         
         if (!user) {
-            return res.render('login', { error: 'Invalid email or password' });
+            return res.render('login', { error: 'Invalid email or password', discordEnabled });
         }
         
         bcrypt.compare(password, user.password_hash, (err, result) => {
             if (err) {
                 console.error('Password comparison error:', err);
-                return res.render('login', { error: 'Error during login. Please try again.' });
+                return res.render('login', { error: 'Error during login. Please try again.', discordEnabled });
             }
             
             if (!result) {
-                return res.render('login', { error: 'Invalid email or password' });
+                return res.render('login', { error: 'Invalid email or password', discordEnabled });
             }
             
             req.login(user, (err) => {
                 if (err) {
                     console.error('Passport login error:', err);
-                    return res.render('login', { error: 'Error during login. Please try again.' });
+                    return res.render('login', { error: 'Error during login. Please try again.', discordEnabled });
                 }
                 res.redirect('/profile');
             });
