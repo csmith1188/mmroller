@@ -51,8 +51,10 @@ router.get('/profile', async (req, res) => {
         // Get user details
         const user = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT id, username, discordname, created_at,
-                       COALESCE(discordname, username) as display_name
+                SELECT id, username, discordname, created_at, verified,
+                       COALESCE(discordname, username) as display_name,
+                       CASE WHEN discord_id IS NOT NULL THEN 1 ELSE 0 END as is_discord_user,
+                       CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 0 END as has_password
                 FROM users
                 WHERE id = ?
             `, [userId], (err, row) => {

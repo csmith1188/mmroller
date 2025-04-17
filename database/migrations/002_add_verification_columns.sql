@@ -1,4 +1,4 @@
--- Add verified column to users table if it doesn't exist
+-- Add verification token and last verification email timestamp columns if they don't exist
 CREATE TABLE IF NOT EXISTS temp_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
@@ -9,13 +9,14 @@ CREATE TABLE IF NOT EXISTS temp_users (
     avatar TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    verified INTEGER DEFAULT 0
+    verified INTEGER DEFAULT 0,
+    verification_token TEXT,
+    last_verification_email DATETIME
 );
 
 -- Copy data from old table to new table
 INSERT INTO temp_users (id, username, discordname, email, password_hash, discord_id, avatar, created_at, updated_at, verified)
-SELECT id, username, discordname, email, password_hash, discord_id, avatar, created_at, updated_at,
-       CASE WHEN discord_id IS NOT NULL THEN 1 ELSE 0 END as verified
+SELECT id, username, discordname, email, password_hash, discord_id, avatar, created_at, updated_at, verified
 FROM users;
 
 -- Drop old table
