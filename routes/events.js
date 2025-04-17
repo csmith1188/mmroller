@@ -98,7 +98,7 @@ router.get('/events/:id', (req, res) => {
             
                 // Get event participants
                 db.all(`
-                    SELECT u.id, COALESCE(u.username, u.discordname) as display_name,
+                    SELECT u.id, u.username as display_name,
                            pes.mmr, pes.matches_played, pes.wins, pes.losses,
                            CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
                            CASE WHEN eb.status = 'active' THEN 1 ELSE 0 END as is_banned
@@ -132,7 +132,7 @@ router.get('/events/:id', (req, res) => {
                     // Get event matches with player information
                     db.all(`
                         SELECT m.*, 
-                               GROUP_CONCAT(COALESCE(u.username, u.discordname)) as player_names,
+                               GROUP_CONCAT(u.username) as player_names,
                                GROUP_CONCAT(u.id) as player_ids,
                                GROUP_CONCAT(mp.position) as positions,
                                GROUP_CONCAT(mp.final_score) as final_scores
@@ -160,7 +160,7 @@ router.get('/events/:id', (req, res) => {
                         // Get event applications if user is admin
                         if (event.is_admin) {
                             db.all(`
-                                SELECT ea.*, COALESCE(u.username, u.discordname) as display_name
+                                SELECT ea.*, u.username as display_name
                                 FROM event_applications ea
                                 JOIN users u ON ea.user_id = u.id
                                 WHERE ea.event_id = ?
@@ -517,18 +517,16 @@ router.get('/events/:id/search-players', (req, res) => {
     db.all(`
         SELECT 
             u.id, 
-            COALESCE(u.username, u.discordname) as display_name
+            u.username as display_name
         FROM users u
         JOIN event_participants ep ON u.id = ep.user_id
         WHERE ep.event_id = ? 
         AND (
-            (u.username LIKE ? AND u.username IS NOT NULL)
-            OR 
-            (u.discordname LIKE ? AND u.discordname IS NOT NULL)
+            (u.username LIKE ?)
         )
-        ORDER BY COALESCE(u.username, u.discordname)
+        ORDER BY u.username
         LIMIT 10
-    `, [eventId, `%${query}%`, `%${query}%`], (err, players) => {
+    `, [eventId, `%${query}%`], (err, players) => {
         if (err) {
             console.error('Search error:', err);
             return res.status(500).send('Error searching players');
@@ -862,7 +860,7 @@ router.get('/:id', async (req, res) => {
         // Get event participants
         const participants = await new Promise((resolve, reject) => {
             db.all(`
-                SELECT u.id, COALESCE(u.username, u.discordname) as display_name,
+                SELECT u.id, u.username as display_name,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_admins 
                            WHERE organization_id = e.organization_id AND user_id = u.id

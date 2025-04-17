@@ -51,10 +51,11 @@ router.get('/profile', async (req, res) => {
         // Get user details
         const user = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT id, username, discordname, created_at, verified,
-                       COALESCE(discordname, username) as display_name,
+                SELECT id, username, created_at, verified,
+                       username as display_name,
                        CASE WHEN discord_id IS NOT NULL THEN 1 ELSE 0 END as is_discord_user,
-                       CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 0 END as has_password
+                       CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 0 END as has_password,
+                       (SELECT COUNT(*) FROM match_players WHERE user_id = users.id) as matches_played
                 FROM users
                 WHERE id = ?
             `, [userId], (err, row) => {
@@ -219,8 +220,11 @@ router.get('/profile/:id', async (req, res) => {
         // Get user details
         const user = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT id, username, discordname, created_at,
-                       COALESCE(discordname, username) as display_name
+                SELECT id, username, created_at, verified,
+                       username as display_name,
+                       CASE WHEN discord_id IS NOT NULL THEN 1 ELSE 0 END as is_discord_user,
+                       CASE WHEN password_hash IS NOT NULL THEN 1 ELSE 0 END as has_password,
+                       (SELECT COUNT(*) FROM match_players WHERE user_id = users.id) as matches_played
                 FROM users
                 WHERE id = ?
             `, [profileId], (err, row) => {

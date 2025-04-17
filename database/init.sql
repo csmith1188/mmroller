@@ -2,7 +2,6 @@
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
-    discordname TEXT,
     email TEXT UNIQUE,
     password_hash TEXT,
     discord_id TEXT UNIQUE,

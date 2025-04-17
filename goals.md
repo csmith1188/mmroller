@@ -1,4 +1,5 @@
-- Email verification and password change
+- unify username and discordname
+- password change
 - change username, short profile description
 - custom fields per participant
 - custom fields per match per player
