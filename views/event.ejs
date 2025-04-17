@@ -98,7 +98,16 @@
                                             </a>
                                         </td>
                                         <td class="text-end">
-                                            <span class="badge bg-primary"><%= participant.mmr %></span>
+                                            <% if (event.is_admin) { %>
+                                                <button type="button" 
+                                                        class="btn btn-link p-0 text-decoration-none" 
+                                                        data-bs-toggle="modal" 
+                                                        data-bs-target="#editMMRModal<%= participant.id %>">
+                                                    <span class="badge bg-primary"><%= participant.mmr %></span>
+                                                </button>
+                                            <% } else { %>
+                                                <span class="badge bg-primary"><%= participant.mmr %></span>
+                                            <% } %>
                                         </td>
                                         <td class="text-end"><%= participant.matches_played %></td>
                                         <td class="text-end">
@@ -133,6 +142,30 @@
                                                                 </li>
                                                             <% } %>
                                                         </ul>
+                                                    </div>
+
+                                                    <!-- Edit MMR Modal -->
+                                                    <div class="modal fade" id="editMMRModal<%= participant.id %>" tabindex="-1">
+                                                        <div class="modal-dialog">
+                                                            <div class="modal-content">
+                                                                <div class="modal-header">
+                                                                    <h5 class="modal-title">Edit MMR for <%= participant.display_name %></h5>
+                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                                </div>
+                                                                <div class="modal-body">
+                                                                    <form action="/events/<%= event.id %>/participants/<%= participant.id %>/mmr" method="POST">
+                                                                        <div class="mb-3">
+                                                                            <label for="mmr" class="form-label">New MMR</label>
+                                                                            <input type="number" class="form-control" id="mmr" name="mmr" value="<%= participant.mmr %>" required>
+                                                                        </div>
+                                                                        <div class="text-end">
+                                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                            <button type="submit" class="btn btn-primary">Update MMR</button>
+                                                                        </div>
+                                                                    </form>
+                                                                </div>
+                                                            </div>
+                                                        </div>
                                                     </div>
 
                                                     <!-- Unban Modal -->

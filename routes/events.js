@@ -1234,4 +1234,47 @@ router.post('/events/:id/participants/:userId/responses', async (req, res) => {
     }
 });
 
+// Update participant MMR
+router.post('/events/:id/participants/:userId/mmr', async (req, res) => {
+    const db = req.app.locals.db;
+    const { id: eventId, userId } = req.params;
+    const { mmr } = req.body;
+    const currentUserId = req.session.userId;
+
+    try {
+        // Verify user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, currentUserId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        // Update MMR
+        await new Promise((resolve, reject) => {
+            db.run(`
+                UPDATE player_event_stats
+                SET mmr = ?
+                WHERE event_id = ? AND user_id = ?
+            `, [mmr, eventId, userId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.redirect(`/events/${eventId}`);
+    } catch (error) {
+        console.error('Error updating MMR:', error);
+        res.status(500).json({ error: 'Error updating MMR' });
+    }
+});
+
 module.exports = router;
