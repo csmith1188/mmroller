@@ -1,12 +1,17 @@
-- submission fields are reversed ?? can't replicate
+- Email verification and password change
+- change username, short profile description
+- custom fields per participant
+- custom fields per match per player
+- custom fields foldout if too long
+- sanctioned matches (custom fields revealed on admin approval)
+- event manual MMR input
 - org privacy toggle
 - only org members apply to events
 - orgs in your profile even when banned
 - does banning from orgs kick from events, making them ununbannable?
-- forfeit kicked/banned handling
+- forfeit kicked/banned handling (undo matche results)
 - icons for actions/discord/etc
+- submission fields are reversed ?? can't replicate
 - Teams
-- Custom fields (org, event, player, match)
-- Email verification and password change
 - Tournaments
 - stylesheet
