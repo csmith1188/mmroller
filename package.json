@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node app.js",
     "init-db": "node database/init.js",
-    "dev": "nodemon app.js",
-    "restart": "rm -f database/database.db && node database/init.js && nodemon app.js"
+    "migrate": "node database/migrate.js",
+    "dev": "nodemon app.js"
   },
   "keywords": [
     "tournament",

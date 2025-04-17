@@ -40,9 +40,25 @@ const requireLogin = (req, res, next) => {
     next();
 };
 
+// Verification middleware
+const requireVerification = (req, res, next) => {
+    // Allow access to profile page without verification
+    if (req.path === '/profile' && !req.params.id) {
+        return next();
+    }
+    
+    // Check if user is verified
+    if (!req.user.verified) {
+        return res.status(403).render('error', { message: 'You must be verified to access this page. Please verify your account.' });
+    }
+    
+    next();
+};
+
 // Make db and requireLogin available to route files
 app.locals.db = db;
 app.locals.requireLogin = requireLogin;
+app.locals.requireVerification = requireVerification;
 
 // Middleware
 app.use(express.urlencoded({ extended: true }));
@@ -109,8 +125,8 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
                     console.log('Creating new user');
                     // Create new user
                     db.run(`
-                        INSERT INTO users (discordname, email, discord_id, avatar, created_at)
-                        VALUES (?, ?, ?, ?, datetime('now'))
+                        INSERT INTO users (discordname, email, discord_id, avatar, verified, created_at)
+                        VALUES (?, ?, ?, ?, 1, datetime('now'))
                     `, [username, profile.email, profile.id, profile.avatar], function(err) {
                         if (err) {
                             console.error('Insert error:', err);
@@ -171,15 +187,15 @@ app.use((req, res, next) => {
 // Use auth routes first - these should be accessible without login
 app.use('/', authRoutes);
 
-// Protected routes - require login
-app.get('/', requireLogin, (req, res) => {
+// Protected routes - require login and verification
+app.get('/', requireLogin, requireVerification, (req, res) => {
     res.redirect('/profile');
 });
 
-app.use('/', requireLogin, profileRoutes);
-app.use('/', requireLogin, organizationRoutes);
-app.use('/', requireLogin, eventRoutes);
-app.use('/', requireLogin, matchRoutes);
+app.use('/', requireLogin, requireVerification, profileRoutes);
+app.use('/', requireLogin, requireVerification, organizationRoutes);
+app.use('/', requireLogin, requireVerification, eventRoutes);
+app.use('/', requireLogin, requireVerification, matchRoutes);
 
 // Start server
 app.listen(port, () => {

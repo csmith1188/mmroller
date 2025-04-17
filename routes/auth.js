@@ -73,7 +73,7 @@ router.post('/register', redirectIfLoggedIn, (req, res) => {
         }
         
         db.run(
-            'INSERT INTO users (username, password_hash, email) VALUES (?, ?, ?)',
+            'INSERT INTO users (username, password_hash, email, verified) VALUES (?, ?, ?, 0)',
             [username, hash, email],
             function(err) {
                 if (err) {
