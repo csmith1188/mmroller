@@ -40,6 +40,7 @@
                                         <% if (customFields && customFields.length > 0) { %>
                                             <% customFields.forEach((field, index) => { %>
                                                 <div class="custom-field mb-3" data-field-id="<%= field.id %>">
+                                                    <input type="hidden" name="field_ids[]" value="<%= field.id %>">
                                                     <div class="d-flex justify-content-between align-items-center mb-2">
                                                         <h6 class="mb-0">Field #<%= index + 1 %></h6>
                                                         <button type="button" class="btn btn-sm btn-outline-danger remove-field">Remove</button>
@@ -54,13 +55,13 @@
                                                     </div>
                                                     <div class="mb-3">
                                                         <div class="form-check">
-                                                            <input class="form-check-input" type="checkbox" name="fields[<%= field.id %>][is_required]" id="required<%= field.id %>" <%= field.is_required ? 'checked' : '' %>>
+                                                            <input class="form-check-input" type="checkbox" name="fields[<%= field.id %>][is_required]" id="required<%= field.id %>" value="1" <%= field.is_required ? 'checked' : '' %>>
                                                             <label class="form-check-label" for="required<%= field.id %>">Required Field</label>
                                                         </div>
                                                     </div>
                                                     <div class="mb-3">
                                                         <div class="form-check">
-                                                            <input class="form-check-input" type="checkbox" name="fields[<%= field.id %>][is_private]" id="private<%= field.id %>" <%= field.is_private ? 'checked' : '' %>>
+                                                            <input class="form-check-input" type="checkbox" name="fields[<%= field.id %>][is_private]" id="private<%= field.id %>" value="1" <%= field.is_private ? 'checked' : '' %>>
                                                             <label class="form-check-label" for="private<%= field.id %>">Private Field (only visible to admins and the participant)</label>
                                                         </div>
                                                     </div>
@@ -409,13 +410,15 @@ document.addEventListener('DOMContentLoaded', function() {
             </div>
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="fields[${newFieldId}][is_required]" id="required${newFieldId}">
+                    <input type="hidden" name="fields[${newFieldId}][required_hidden]" value="0">
+                    <input class="form-check-input" type="checkbox" name="fields[${newFieldId}][is_required]" id="required${newFieldId}" value="1">
                     <label class="form-check-label" for="required${newFieldId}">Required Field</label>
                 </div>
             </div>
             <div class="mb-3">
                 <div class="form-check">
-                    <input class="form-check-input" type="checkbox" name="fields[${newFieldId}][is_private]" id="private${newFieldId}">
+                    <input type="hidden" name="fields[${newFieldId}][private_hidden]" value="0">
+                    <input class="form-check-input" type="checkbox" name="fields[${newFieldId}][is_private]" id="private${newFieldId}" value="1">
                     <label class="form-check-label" for="private${newFieldId}">Private Field (only visible to admins and the participant)</label>
                 </div>
             </div>

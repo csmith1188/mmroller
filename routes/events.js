@@ -889,7 +889,13 @@ router.post('/events/:id/custom-fields', async (req, res) => {
     const db = req.app.locals.db;
     const eventId = req.params.id;
     const userId = req.session.userId;
-    const fields = req.body.fields;
+    const fields = req.body.fields || {};
+    const fieldIds = req.body.field_ids || [];
+
+    console.log('Received form data:', {
+        fields,
+        fieldIds
+    });
 
     try {
         // Check if user is admin
@@ -908,12 +914,17 @@ router.post('/events/:id/custom-fields', async (req, res) => {
             return res.status(403).send('Unauthorized: Only organization admins can manage custom fields');
         }
 
-        // Validate fields
-        for (const [fieldId, fieldData] of Object.entries(fields)) {
-            if (!fieldData.field_name || fieldData.field_name.trim() === '') {
-                return res.status(400).send('Field name is required');
-            }
-        }
+        // Get existing field IDs
+        const existingFields = await new Promise((resolve, reject) => {
+            db.all('SELECT id FROM event_custom_fields WHERE event_id = ?', [eventId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows.map(row => row.id));
+            });
+        });
+
+        // Determine which fields were removed
+        const submittedFieldIds = fieldIds.map(id => parseInt(id));
+        const removedFieldIds = existingFields.filter(id => !submittedFieldIds.includes(id));
 
         // Start transaction
         await new Promise((resolve, reject) => {
@@ -924,8 +935,31 @@ router.post('/events/:id/custom-fields', async (req, res) => {
         });
 
         try {
-            // Process each field
-            for (const [fieldId, fieldData] of Object.entries(fields)) {
+            // Delete removed fields
+            if (removedFieldIds.length > 0) {
+                await new Promise((resolve, reject) => {
+                    const placeholders = removedFieldIds.map(() => '?').join(',');
+                    const query = `DELETE FROM event_custom_fields WHERE event_id = ? AND id IN (${placeholders})`;
+                    db.run(query, [eventId, ...removedFieldIds], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+            }
+
+            // Process remaining and new fields
+            for (let i = 0; i < fieldIds.length; i++) {
+                const fieldId = fieldIds[i];
+                const fieldData = Array.isArray(fields) ? fields[i] : fields[fieldId];
+                
+                console.log('Processing field:', fieldId, fieldData);
+                if (!fieldData || !fieldData.field_name || fieldData.field_name.trim() === '') {
+                    continue;
+                }
+
+                const isRequired = fieldData.is_required === '1';
+                const isPrivate = fieldData.is_private === '1';
+
                 if (fieldId.startsWith('new_')) {
                     // Insert new field
                     await new Promise((resolve, reject) => {
@@ -936,8 +970,8 @@ router.post('/events/:id/custom-fields', async (req, res) => {
                             eventId,
                             fieldData.field_name.trim(),
                             fieldData.field_description ? fieldData.field_description.trim() : null,
-                            fieldData.is_required ? 1 : 0,
-                            fieldData.is_private ? 1 : 0
+                            isRequired ? 1 : 0,
+                            isPrivate ? 1 : 0
                         ], (err) => {
                             if (err) reject(err);
                             resolve();
@@ -945,6 +979,14 @@ router.post('/events/:id/custom-fields', async (req, res) => {
                     });
                 } else {
                     // Update existing field
+                    const numericFieldId = parseInt(fieldId);
+                    if (isNaN(numericFieldId)) {
+                        console.error('Invalid field ID:', fieldId);
+                        continue;
+                    }
+
+
+
                     await new Promise((resolve, reject) => {
                         db.run(`
                             UPDATE event_custom_fields
@@ -956,12 +998,15 @@ router.post('/events/:id/custom-fields', async (req, res) => {
                         `, [
                             fieldData.field_name.trim(),
                             fieldData.field_description ? fieldData.field_description.trim() : null,
-                            fieldData.is_required ? 1 : 0,
-                            fieldData.is_private ? 1 : 0,
-                            fieldId,
+                            isRequired ? 1 : 0,
+                            isPrivate ? 1 : 0,
+                            numericFieldId,
                             eventId
                         ], (err) => {
-                            if (err) reject(err);
+                            if (err) {
+                                console.error('Error updating field:', err);
+                                reject(err);
+                            }
                             resolve();
                         });
                     });
@@ -1113,7 +1158,7 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
                 LEFT JOIN participant_custom_responses r 
                     ON f.id = r.field_id 
                     AND r.user_id = ?
-                    AND r.event_id = ?
+                    AND r.event_id = f.event_id
                 WHERE f.event_id = ?
                 AND (
                     ? = 1  -- Current user is admin
@@ -1125,7 +1170,6 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
             
             db.all(query, [
                 userId,
-                eventId,
                 eventId,
                 participant.is_admin,
                 isViewingOwnProfile
@@ -1175,6 +1219,7 @@ router.post('/events/:id/participants/:userId/responses', async (req, res) => {
 
     try {
         const responses = req.body.responses;
+        console.log('Received responses:', responses);
         
         if (!responses) {
             return res.status(400).json({ error: 'No responses provided' });
@@ -1191,6 +1236,8 @@ router.post('/events/:id/participants/:userId/responses', async (req, res) => {
         try {
             // Process each response
             for (const [fieldId, response] of Object.entries(responses)) {
+                console.log(`Processing response for field ${fieldId}:`, response);
+                
                 if (response === undefined || response === null || response.trim() === '') {
                     continue;
                 }
@@ -1204,8 +1251,13 @@ router.post('/events/:id/participants/:userId/responses', async (req, res) => {
                             updated_at = CURRENT_TIMESTAMP
                     `;
                     
+                    console.log('Executing query with params:', [eventId, userId, fieldId, response]);
+                    
                     db.run(query, [eventId, userId, fieldId, response], (err) => {
-                        if (err) reject(err);
+                        if (err) {
+                            console.error('Error saving response:', err);
+                            reject(err);
+                        }
                         resolve();
                     });
                 });

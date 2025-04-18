@@ -1,4 +1,5 @@
 - user profile description
+- unified alerts and feedback modal
 - verify discorders can change username and description but not email
 - custom fields per participant
 - custom fields per match per player

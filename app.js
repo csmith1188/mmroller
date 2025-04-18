@@ -112,7 +112,7 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
                     // Update user's Discord info
                     db.run(`
                         UPDATE users 
-                        SET discordname = ?, email = ?, avatar = ?, updated_at = datetime('now')
+                        SET username = ?, email = ?, avatar = ?, updated_at = datetime('now')
                         WHERE discord_id = ?
                     `, [username, profile.email, profile.avatar, profile.id], (err) => {
                         if (err) {
@@ -125,7 +125,7 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
                     console.log('Creating new user');
                     // Create new user
                     db.run(`
-                        INSERT INTO users (discordname, email, discord_id, avatar, verified, created_at)
+                        INSERT INTO users (username, email, discord_id, avatar, verified, created_at)
                         VALUES (?, ?, ?, ?, 1, datetime('now'))
                     `, [username, profile.email, profile.id, profile.avatar], function(err) {
                         if (err) {
@@ -135,7 +135,7 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
                         
                         const newUser = {
                             id: this.lastID,
-                            discordname: username,
+                            username: username,
                             email: profile.email,
                             discord_id: profile.id,
                             avatar: profile.avatar

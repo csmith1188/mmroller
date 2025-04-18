@@ -17,7 +17,7 @@
 
             <% if (customFields && customFields.length > 0) { %>
                 <form id="customFieldsForm" action="/events/<%= eventId %>/participants/<%= userId %>/responses" method="POST">
-                    <% customFields.forEach((field, index) => { %>
+                    <% customFields.forEach(field => { %>
                         <% if (isViewingOwnProfile || isAdmin || !field.is_private) { %>
                             <div class="mb-3">
                                 <label for="field_<%= field.id %>" class="form-label">
@@ -33,21 +33,14 @@
                                     <small class="text-muted d-block"><%= field.field_description %></small>
                                 <% } %>
                                 <% if (isViewingOwnProfile) { %>
-                                    <!-- Debug info -->
-                                    <div class="debug-info" style="display: none;">
-                                        Field ID: <%= field.id %><br>
-                                        Response: <%= field.response %><br>
-                                        Is Viewing Own Profile: <%= isViewingOwnProfile %><br>
-                                        Is Admin: <%= isAdmin %>
-                                    </div>
                                     <input type="text" 
                                            class="form-control" 
                                            id="field_<%= field.id %>" 
                                            name="responses[<%= field.id %>]" 
-                                           value="<%= field.response || '' %>"
+                                           value="<%= field.response !== null ? field.response : '' %>"
                                            <%= field.is_required ? 'required' : '' %>>
                                 <% } else { %>
-                                    <p class="form-control-plaintext"><%= field.response || 'Not provided' %></p>
+                                    <p class="form-control-plaintext"><%= field.response !== null ? field.response : 'Not provided' %></p>
                                 <% } %>
                             </div>
                         <% } %>
