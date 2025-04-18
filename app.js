@@ -9,7 +9,7 @@ const passport = require('passport');
 const DiscordStrategy = require('passport-discord').Strategy;
 
 const app = express();
-const port = 3000;
+const port = process.env.PORT || 3000;
 
 // Import route files
 const authRoutes = require('./routes/auth');
@@ -199,7 +199,7 @@ app.use('/', requireLogin, requireVerification, matchRoutes);
 
 // Start server
 app.listen(port, () => {
-    console.log(`Server running at http://localhost:${port}`);
+    console.log(`Server is running on port ${port}`);
 });
 
 // Close database connection when the app is shutting down

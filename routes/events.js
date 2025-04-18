@@ -1165,7 +1165,7 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
         // Get participant details and check if current user is admin
         const participant = await new Promise((resolve, reject) => {
             const query = `
-                SELECT u.id, u.username as display_name, u.created_at,
+                SELECT u.id as user_id, u.username as display_name, u.created_at,
                        pes.mmr, pes.matches_played, pes.wins,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_admins oa

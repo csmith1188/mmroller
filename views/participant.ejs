@@ -3,7 +3,11 @@
 <div class="container mt-4">
     <div class="card">
         <div class="card-header">
-            <h2 class="mb-0"><%= participant.display_name %></h2>
+            <h2 class="mb-0">
+                <a href="/profile/<%= participant.user_id %>" class="text-decoration-none">
+                    <%= participant.display_name %>
+                </a>
+            </h2>
             <small class="text-muted">Joined on <%= new Date(participant.created_at).toLocaleDateString() %></small>
         </div>
         <div class="card-body">
