@@ -75,7 +75,7 @@
                         <% if (match.custom_fields && match.custom_fields.length > 0) { %>
                             <form id="customFieldsForm" action="/matches/<%= match.id %>/custom-responses" method="POST">
                                 <% match.custom_fields.forEach(field => { %>
-                                    <% if (match.is_admin || !field.is_private) { %>
+                                    <% if (match.is_admin || !field.is_private || field.current_response !== undefined) { %>
                                         <div class="mb-3">
                                             <label for="field_<%= field.id %>" class="form-label">
                                                 <%= field.field_name %>
@@ -149,6 +149,74 @@
                                     <button type="submit" class="btn btn-primary mb-4">Save Responses</button>
                                 <% } %>
                             </form>
+
+                            <% if (match.custom_fields.some(field => (match.is_admin || !field.is_private) && field.responses && field.responses.length > 0)) { %>
+                                <% 
+                                    // Group responses by player
+                                    const playerResponses = {};
+                                    match.custom_fields.forEach(field => {
+                                        if ((match.is_admin || !field.is_private) && field.responses) {
+                                            field.responses.forEach(response => {
+                                                if (response.user_id !== userId) {
+                                                    if (!playerResponses[response.user_id]) {
+                                                        playerResponses[response.user_id] = {
+                                                            username: response.username,
+                                                            responses: []
+                                                        };
+                                                    }
+                                                    playerResponses[response.user_id].responses.push({
+                                                        field_name: field.field_name,
+                                                        field_type: field.field_type,
+                                                        response: response.response,
+                                                        is_private: field.is_private
+                                                    });
+                                                }
+                                            });
+                                        }
+                                    });
+                                %>
+                                <% Object.values(playerResponses).forEach(player => { %>
+                                    <div class="card mb-3">
+                                        <div class="card-header">
+                                            <h6 class="mb-0"><%= player.username %></h6>
+                                        </div>
+                                        <div class="card-body">
+                                            <div class="list-group">
+                                                <% player.responses.forEach(response => { %>
+                                                    <div class="list-group-item">
+                                                        <div class="d-flex justify-content-between align-items-center">
+                                                            <strong><%= response.field_name %></strong>
+                                                            <% if (response.is_private) { %>
+                                                                <span class="badge bg-secondary">
+                                                                    <i class="bi bi-lock-fill"></i> Private
+                                                                </span>
+                                                            <% } %>
+                                                        </div>
+                                                        <% if (response.field_type === 'date' && response.response) { %>
+                                                            <% 
+                                                                try {
+                                                                    const date = new Date(response.response);
+                                                                    if (!isNaN(date.getTime())) { %>
+                                                                        <div><%= date.toLocaleString() %></div>
+                                                                    <% } else { %>
+                                                                        <div><%= response.response %></div>
+                                                                    <% }
+                                                                } catch (e) { %>
+                                                                    <div><%= response.response %></div>
+                                                                <% }
+                                                            %>
+                                                        <% } else if (response.field_type === 'long') { %>
+                                                            <div style="white-space: pre-wrap;"><%= response.response %></div>
+                                                        <% } else { %>
+                                                            <div><%= response.response %></div>
+                                                        <% } %>
+                                                    </div>
+                                                <% }); %>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <% }); %>
+                            <% } %>
 
                             <script>
                                 document.getElementById('customFieldsForm').addEventListener('submit', function(e) {
