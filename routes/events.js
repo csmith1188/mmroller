@@ -118,19 +118,29 @@ router.get('/events/:id', async (req, res) => {
 
         // Get event matches
         const matches = await new Promise((resolve, reject) => {
-            db.all(`
-                SELECT m.*, 
-                       GROUP_CONCAT(u.username) as player_names,
-                       GROUP_CONCAT(u.id) as player_ids,
-                       GROUP_CONCAT(mp.position) as positions,
-                       GROUP_CONCAT(mp.final_score) as final_scores
+            const query = `
+                SELECT DISTINCT
+                    m.id,
+                    m.status,
+                    m.created_at,
+                    GROUP_CONCAT(u.username) as player_names,
+                    GROUP_CONCAT(mp.position) as positions,
+                    GROUP_CONCAT(COALESCE(mp.final_score, 'null')) as final_scores,
+                    GROUP_CONCAT(u.id) as user_ids
                 FROM matches m
                 JOIN match_players mp ON m.id = mp.match_id
                 JOIN users u ON mp.user_id = u.id
                 WHERE m.event_id = ?
-                GROUP BY m.id
+                AND m.id IN (
+                    SELECT match_id 
+                    FROM match_players 
+                    WHERE user_id = ?
+                )
+                GROUP BY m.id, m.status, m.created_at
                 ORDER BY m.created_at DESC
-            `, [eventId], (err, rows) => {
+            `;
+            
+            db.all(query, [eventId, userId], (err, rows) => {
                 if (err) {
                     console.error('Error fetching matches:', err);
                     resolve([]);
@@ -140,26 +150,20 @@ router.get('/events/:id', async (req, res) => {
                     resolve([]);
                     return;
                 }
+                console.log('Found matches:', rows); // Debug log
                 rows.forEach(row => {
-                    if (row.player_names) {
-                        row.player_names = row.player_names.split(',');
+                    // Initialize arrays with empty defaults
+                    row.player_names = (row.player_names || '').split(',').filter(Boolean);
+                    row.positions = (row.positions || '').split(',').filter(Boolean).map(Number);
+                    row.final_scores = (row.final_scores || '').split(',').filter(Boolean).map(x => x === 'null' ? null : Number(x));
+                    row.user_ids = (row.user_ids || '').split(',').filter(Boolean).map(Number);
+                    
+                    // Determine winner based on position (lower is better)
+                    if (row.status === 'completed') {
+                        const playerIndex = row.user_ids.indexOf(parseInt(userId));
+                        row.isWinner = row.positions[playerIndex] === 1;
                     } else {
-                        row.player_names = [];
-                    }
-                    if (row.player_ids) {
-                        row.player_ids = row.player_ids.split(',').map(Number);
-                    } else {
-                        row.player_ids = [];
-                    }
-                    if (row.positions) {
-                        row.positions = row.positions.split(',').map(Number);
-                    } else {
-                        row.positions = [];
-                    }
-                    if (row.final_scores) {
-                        row.final_scores = row.final_scores.split(',').map(Number);
-                    } else {
-                        row.final_scores = [];
+                        row.isWinner = false;
                     }
                 });
                 resolve(rows);
@@ -1142,24 +1146,29 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
             return res.status(404).render('error', { message: 'Participant not found' });
         }
 
+        console.log('Looking for matches for event:', eventId, 'and user:', userId); // Debug log
+
         // Get matches for this participant
         const matches = await new Promise((resolve, reject) => {
             const query = `
-                SELECT 
+                SELECT DISTINCT
                     m.id,
                     m.status,
                     m.created_at,
-                    m.winner_id,
-                    GROUP_CONCAT(u.username) as player_names
+                    GROUP_CONCAT(u.username) as player_names,
+                    GROUP_CONCAT(mp.position) as positions,
+                    GROUP_CONCAT(COALESCE(mp.final_score, 'null')) as final_scores,
+                    GROUP_CONCAT(u.id) as user_ids
                 FROM matches m
                 JOIN match_players mp ON m.id = mp.match_id
                 JOIN users u ON mp.user_id = u.id
                 WHERE m.event_id = ?
-                AND EXISTS (
-                    SELECT 1 FROM match_players 
-                    WHERE match_id = m.id AND user_id = ?
+                AND m.id IN (
+                    SELECT match_id 
+                    FROM match_players 
+                    WHERE user_id = ?
                 )
-                GROUP BY m.id
+                GROUP BY m.id, m.status, m.created_at
                 ORDER BY m.created_at DESC
             `;
             
@@ -1173,8 +1182,26 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
                     resolve([]);
                     return;
                 }
+                console.log('Found matches:', rows); // Debug log
                 rows.forEach(row => {
-                    row.player_names = row.player_names.split(',');
+                    if (row.player_names) {
+                        row.player_names = row.player_names.split(',');
+                        row.positions = row.positions.split(',').map(Number);
+                        row.final_scores = row.final_scores.split(',').map(x => x === 'null' ? null : Number(x));
+                        row.user_ids = row.user_ids.split(',').map(Number);
+                        
+                        // Determine winner based on position (lower is better)
+                        if (row.status === 'completed') {
+                            const playerIndex = row.user_ids.indexOf(parseInt(userId));
+                            row.isWinner = row.positions[playerIndex] === 1;
+                        }
+                    } else {
+                        row.player_names = [];
+                        row.positions = [];
+                        row.final_scores = [];
+                        row.user_ids = [];
+                        row.isWinner = false;
+                    }
                 });
                 resolve(rows);
             });

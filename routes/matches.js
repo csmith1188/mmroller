@@ -744,14 +744,18 @@ router.post('/events/:id/matches', async (req, res) => {
         });
 
         try {
-            // Create match
+            // Create the match
             const matchId = await new Promise((resolve, reject) => {
                 db.run(`
-                    INSERT INTO matches (event_id, status)
-                    VALUES (?, 'pending')
-                `, [eventId], function(err) {
-                    if (err) reject(err);
-                    resolve(this.lastID);
+                    INSERT INTO matches (event_id, status, created_at, datetime)
+                    VALUES (?, 'pending', datetime('now'), ?)
+                `, [eventId, req.body.datetime], function(err) {
+                    if (err) {
+                        console.error('Error creating match:', err);
+                        reject(err);
+                    } else {
+                        resolve(this.lastID);
+                    }
                 });
             });
 
@@ -763,7 +767,7 @@ router.post('/events/:id/matches', async (req, res) => {
                         VALUES (?, ?, ?)
                     `, [matchId, playerId, index + 1], (err) => {
                         if (err) reject(err);
-                        resolve();
+                        else resolve();
                     });
                 });
             });
@@ -774,7 +778,7 @@ router.post('/events/:id/matches', async (req, res) => {
             await new Promise((resolve, reject) => {
                 db.run('COMMIT', (err) => {
                     if (err) reject(err);
-                    resolve();
+                    else resolve();
                 });
             });
 

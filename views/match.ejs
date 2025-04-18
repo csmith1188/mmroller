@@ -59,7 +59,7 @@
                                 <div class="list-group-item">
                                     <div class="d-flex justify-content-between align-items-center">
                                         <div>
-                                            <a href="/profile/<%= player.user_id %>"><%= player.display_name %></a>
+                                            <a href="/events/<%= match.event_id %>/participants/<%= player.user_id %>"><%= player.display_name %></a>
                                             <% if (player.position) { %>
                                                 <span class="text-muted">(Position <%= player.position %>)</span>
                                             <% } %>
@@ -192,12 +192,16 @@
                         </p>
                         <p>
                             <strong>Created:</strong>
-                            <%= new Date(match.created_at).toLocaleDateString() %>
+                            <%= new Date(match.created_at).toLocaleString() %>
+                        </p>
+                        <p>
+                            <strong>Match Date:</strong>
+                            <%= new Date(match.datetime).toLocaleString() %>
                         </p>
                         <% if (match.status === 'completed') { %>
                             <p>
                                 <strong>Completed:</strong>
-                                <%= new Date(match.completed_at).toLocaleDateString() %>
+                                <%= new Date(match.completed_at).toLocaleString() %>
                             </p>
                         <% } %>
                     </div>

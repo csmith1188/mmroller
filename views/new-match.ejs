@@ -9,6 +9,16 @@
                     </div>
                     <div class="card-body">
                         <form action="/events/<%= eventId %>/matches" method="POST" id="matchForm">
+                            <div class="mb-3">
+                                <label for="datetime" class="form-label">Match Date & Time</label>
+                                <input type="datetime-local" 
+                                       class="form-control" 
+                                       id="datetime" 
+                                       name="datetime" 
+                                       value="<%= new Date().toISOString().slice(0, 16) %>"
+                                       required>
+                            </div>
+
                             <div id="playersContainer">
                                 <!-- Player inputs will be added here dynamically -->
                             </div>

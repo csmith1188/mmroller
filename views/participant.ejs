@@ -112,6 +112,46 @@
             <% } else { %>
                 <p class="text-muted">No custom fields have been set up for this event.</p>
             <% } %>
+
+            <h4 class="mt-4">Match History</h4>
+            <% if (matches && matches.length > 0) { %>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Match #</th>
+                                <th>Players</th>
+                                <th>Result</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% matches.forEach(match => { %>
+                                <tr>
+                                    <td><a href="/matches/<%= match.id %>">#<%= match.id %></a></td>
+                                    <td><%= match.player_names.join(', ') %></td>
+                                    <td>
+                                        <% if (match.status === 'completed') { %>
+                                            <% if (match.isWinner) { %>
+                                                <span class="badge bg-success">Won</span>
+                                            <% } else { %>
+                                                <span class="badge bg-danger">Lost</span>
+                                            <% } %>
+                                        <% } else if (match.status === 'forfeit') { %>
+                                            <span class="badge bg-warning text-dark">Forfeit</span>
+                                        <% } else { %>
+                                            <span class="badge bg-secondary">Pending</span>
+                                        <% } %>
+                                    </td>
+                                    <td><%= new Date(match.created_at).toLocaleString() %></td>
+                                </tr>
+                            <% }); %>
+                        </tbody>
+                    </table>
+                </div>
+            <% } else { %>
+                <p class="text-muted">No matches played yet.</p>
+            <% } %>
         </div>
     </div>
 </div>
