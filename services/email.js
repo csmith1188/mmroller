@@ -4,11 +4,24 @@ const crypto = require('crypto');
 // Create a transporter using environment variables
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: process.env.SMTP_PORT,
+    port: parseInt(process.env.SMTP_PORT),
     secure: process.env.SMTP_SECURE === 'true',
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
+    },
+    tls: {
+        rejectUnauthorized: false
+    },
+    debug: true
+});
+
+// Verify transporter configuration
+transporter.verify(function(error, success) {
+    if (error) {
+        console.error('SMTP Configuration Error:', error);
+    } else {
+        console.log('SMTP Server is ready to send emails');
     }
 });
 

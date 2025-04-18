@@ -42,8 +42,8 @@ const requireLogin = (req, res, next) => {
 
 // Verification middleware
 const requireVerification = (req, res, next) => {
-    // Allow access to profile page without verification
-    if (req.path === '/profile' && !req.params.id) {
+    // Allow access to profile and profile edit pages without verification
+    if (req.path === '/profile' && !req.params.id || req.path === '/profile/edit') {
         return next();
     }
     
