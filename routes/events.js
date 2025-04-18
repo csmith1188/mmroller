@@ -150,7 +150,6 @@ router.get('/events/:id', async (req, res) => {
                     resolve([]);
                     return;
                 }
-                console.log('Found matches:', rows); // Debug log
                 rows.forEach(row => {
                     // Initialize arrays with empty defaults
                     row.player_names = (row.player_names || '').split(',').filter(Boolean);
@@ -930,11 +929,6 @@ router.post('/events/:id/custom-fields', async (req, res) => {
     const fields = req.body.fields || {};
     const fieldIds = req.body.field_ids || [];
 
-    console.log('Received form data:', {
-        fields,
-        fieldIds
-    });
-
     try {
         // Check if user is admin
         const isAdmin = await new Promise((resolve, reject) => {
@@ -990,7 +984,6 @@ router.post('/events/:id/custom-fields', async (req, res) => {
                 const fieldId = fieldIds[i];
                 const fieldData = Array.isArray(fields) ? fields[i] : fields[fieldId];
                 
-                console.log('Processing field:', fieldId, fieldData);
                 if (!fieldData || !fieldData.field_name || fieldData.field_name.trim() === '') {
                     continue;
                 }
@@ -1146,8 +1139,6 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
             return res.status(404).render('error', { message: 'Participant not found' });
         }
 
-        console.log('Looking for matches for event:', eventId, 'and user:', userId); // Debug log
-
         // Get matches for this participant
         const matches = await new Promise((resolve, reject) => {
             const query = `
@@ -1182,7 +1173,6 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
                     resolve([]);
                     return;
                 }
-                console.log('Found matches:', rows); // Debug log
                 rows.forEach(row => {
                     if (row.player_names) {
                         row.player_names = row.player_names.split(',');
@@ -1239,7 +1229,6 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
                 isViewingOwnProfile
             ], (err, rows) => {
                 if (err) reject(err);
-                console.log('Custom fields data:', JSON.stringify(rows, null, 2));
                 resolve(rows);
             });
         });
@@ -1263,8 +1252,6 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
             isAdmin: participant.is_admin,
             messages
         };
-        console.log('Template data:', JSON.stringify(templateData, null, 2));
-
         res.render('participant', templateData);
     } catch (error) {
         console.error('Error fetching participant details:', error);
@@ -1284,7 +1271,6 @@ router.post('/events/:id/participants/:userId/responses', async (req, res) => {
 
     try {
         const responses = req.body.responses;
-        console.log('Received responses:', responses);
         
         if (!responses) {
             return res.status(400).json({ error: 'No responses provided' });
@@ -1314,7 +1300,6 @@ router.post('/events/:id/participants/:userId/responses', async (req, res) => {
         try {
             // Process each response
             for (const [fieldIndex, response] of Object.entries(responses)) {
-                console.log(`Processing response for field index ${fieldIndex}:`, response);
                 
                 if (response === undefined || response === null || response.trim() === '') {
                     continue;
@@ -1334,8 +1319,6 @@ router.post('/events/:id/participants/:userId/responses', async (req, res) => {
                             response = excluded.response,
                             updated_at = CURRENT_TIMESTAMP
                     `;
-                    
-                    console.log('Executing query with params:', [eventId, userId, fieldId, response]);
                     
                     db.run(query, [eventId, userId, fieldId, response], (err) => {
                         if (err) {
