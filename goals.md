@@ -1,10 +1,12 @@
+- email broken
+- links to profiles in applications
+- event organizers
+- remove query param messages from participants
 - require admin approval: can't auto-complete match with matching scores
 - user profile description
 - unified alerts and feedback modal
 - verify discorders can change username and description but not email
 - custom fields foldout if too long
-- sanctioned matches (custom fields revealed on admin approval)
-- event manual MMR input
 - org privacy toggle
 - only org members apply to events
 - orgs in your profile even when banned
