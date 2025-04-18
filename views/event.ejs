@@ -50,8 +50,17 @@
                                                         <input type="text" class="form-control" name="fields[<%= field.id %>][field_name]" value="<%= field.field_name %>" required>
                                                     </div>
                                                     <div class="mb-3">
-                                                        <label class="form-label">Description (Optional)</label>
-                                                        <textarea class="form-control" name="fields[<%= field.id %>][field_description]" rows="2"><%= field.field_description || '' %></textarea>
+                                                        <label class="form-label">Field Type</label>
+                                                        <select class="form-select" name="fields[<%= field.id %>][field_type]">
+                                                            <option value="short" <%= field.field_type === 'short' ? 'selected' : '' %>>Short Text</option>
+                                                            <option value="long" <%= field.field_type === 'long' ? 'selected' : '' %>>Long Text</option>
+                                                            <option value="number" <%= field.field_type === 'number' ? 'selected' : '' %>>Number</option>
+                                                            <option value="date" <%= field.field_type === 'date' ? 'selected' : '' %>>Date</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="mb-3">
+                                                        <label class="form-label">Field Description</label>
+                                                        <input type="text" class="form-control" name="fields[<%= field.id %>][field_description]" value="<%= field.field_description || '' %>">
                                                     </div>
                                                     <div class="mb-3">
                                                         <div class="form-check">
@@ -83,8 +92,7 @@
                                 <tr>
                                     <th>Player</th>
                                     <th class="text-end">MMR</th>
-                                    <th class="text-end">Matches</th>
-                                    <th class="text-end">W/L</th>
+                                    <th class="text-end">W/M</th>
                                     <% if (event.is_admin) { %>
                                         <th class="text-end">Actions</th>
                                     <% } %>
@@ -110,11 +118,10 @@
                                                 <span class="badge bg-primary"><%= participant.mmr %></span>
                                             <% } %>
                                         </td>
-                                        <td class="text-end"><%= participant.matches_played %></td>
                                         <td class="text-end">
-                                            <span class="text-success"><%= participant.wins %></span>
+                                            <span class="text-success"><%= participant.wins || 0 %></span>
                                             /
-                                            <span class="text-danger"><%= participant.losses %></span>
+                                            <span><%= participant.matches_played || 0 %></span>
                                         </td>
                                         <% if (event.is_admin) { %>
                                             <td class="text-end">
@@ -405,23 +412,31 @@ document.addEventListener('DOMContentLoaded', function() {
                 <input type="text" class="form-control" name="fields[${newFieldId}][field_name]" required>
             </div>
             <div class="mb-3">
-                <label class="form-label">Description (Optional)</label>
-                <textarea class="form-control" name="fields[${newFieldId}][field_description]" rows="2"></textarea>
+                <label class="form-label">Field Type</label>
+                <select class="form-select" name="fields[${newFieldId}][field_type]">
+                    <option value="short">Short Text</option>
+                    <option value="long">Long Text</option>
+                    <option value="number">Number</option>
+                    <option value="date">Date</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Field Description</label>
+                <input type="text" class="form-control" name="fields[${newFieldId}][field_description]">
             </div>
             <div class="mb-3">
                 <div class="form-check">
-                    <input type="hidden" name="fields[${newFieldId}][required_hidden]" value="0">
                     <input class="form-check-input" type="checkbox" name="fields[${newFieldId}][is_required]" id="required${newFieldId}" value="1">
                     <label class="form-check-label" for="required${newFieldId}">Required Field</label>
                 </div>
             </div>
             <div class="mb-3">
                 <div class="form-check">
-                    <input type="hidden" name="fields[${newFieldId}][private_hidden]" value="0">
                     <input class="form-check-input" type="checkbox" name="fields[${newFieldId}][is_private]" id="private${newFieldId}" value="1">
                     <label class="form-check-label" for="private${newFieldId}">Private Field (only visible to admins and the participant)</label>
                 </div>
             </div>
+            <input type="hidden" name="field_ids[]" value="${newFieldId}">
         `;
         
         customFieldsContainer.appendChild(newField);

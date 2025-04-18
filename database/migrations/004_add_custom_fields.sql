@@ -4,6 +4,7 @@ CREATE TABLE IF NOT EXISTS event_custom_fields (
     event_id INTEGER NOT NULL,
     field_name TEXT NOT NULL,
     field_description TEXT,
+    field_type TEXT NOT NULL DEFAULT 'short',
     is_private INTEGER DEFAULT 0,
     is_required INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

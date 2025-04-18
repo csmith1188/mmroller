@@ -47,12 +47,14 @@ router.get('/events/:id', async (req, res) => {
         const event = await new Promise((resolve, reject) => {
             db.get(`
                 SELECT e.*, 
+                       o.name as organization_name,
                        CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_admins 
                            WHERE organization_id = e.organization_id AND user_id = ?
                        ) THEN 1 ELSE 0 END as is_admin
                 FROM events e
+                JOIN organizations o ON e.organization_id = o.id
                 LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
                 WHERE e.id = ?
             `, [userId, userId, eventId], (err, row) => {
@@ -94,7 +96,9 @@ router.get('/events/:id', async (req, res) => {
                            WHERE organization_id = e.organization_id AND user_id = u.id
                        ) THEN 1 ELSE 0 END as is_admin,
                        CASE WHEN eb.status = 'active' THEN 1 ELSE 0 END as is_banned,
-                       pes.mmr as mmr
+                       pes.mmr as mmr,
+                       pes.matches_played,
+                       pes.wins
                 FROM users u
                 JOIN event_participants ep ON u.id = ep.user_id
                 JOIN events e ON e.id = ep.event_id
@@ -962,54 +966,16 @@ router.post('/events/:id/custom-fields', async (req, res) => {
 
                 if (fieldId.startsWith('new_')) {
                     // Insert new field
-                    await new Promise((resolve, reject) => {
-                        db.run(`
-                            INSERT INTO event_custom_fields (event_id, field_name, field_description, is_required, is_private)
-                            VALUES (?, ?, ?, ?, ?)
-                        `, [
-                            eventId,
-                            fieldData.field_name.trim(),
-                            fieldData.field_description ? fieldData.field_description.trim() : null,
-                            isRequired ? 1 : 0,
-                            isPrivate ? 1 : 0
-                        ], (err) => {
-                            if (err) reject(err);
-                            resolve();
-                        });
-                    });
+                    await db.run(
+                        'INSERT INTO event_custom_fields (event_id, field_name, field_description, field_type, is_required, is_private) VALUES (?, ?, ?, ?, ?, ?)',
+                        [eventId, fieldData.field_name, fieldData.field_description, fieldData.field_type, isRequired, isPrivate]
+                    );
                 } else {
                     // Update existing field
-                    const numericFieldId = parseInt(fieldId);
-                    if (isNaN(numericFieldId)) {
-                        console.error('Invalid field ID:', fieldId);
-                        continue;
-                    }
-
-
-
-                    await new Promise((resolve, reject) => {
-                        db.run(`
-                            UPDATE event_custom_fields
-                            SET field_name = ?,
-                                field_description = ?,
-                                is_required = ?,
-                                is_private = ?
-                            WHERE id = ? AND event_id = ?
-                        `, [
-                            fieldData.field_name.trim(),
-                            fieldData.field_description ? fieldData.field_description.trim() : null,
-                            isRequired ? 1 : 0,
-                            isPrivate ? 1 : 0,
-                            numericFieldId,
-                            eventId
-                        ], (err) => {
-                            if (err) {
-                                console.error('Error updating field:', err);
-                                reject(err);
-                            }
-                            resolve();
-                        });
-                    });
+                    await db.run(
+                        'UPDATE event_custom_fields SET field_name = ?, field_description = ?, field_type = ?, is_required = ?, is_private = ? WHERE id = ? AND event_id = ?',
+                        [fieldData.field_name, fieldData.field_description, fieldData.field_type, isRequired, isPrivate, fieldId, eventId]
+                    );
                 }
             }
 
@@ -1151,6 +1117,7 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
                     f.id,
                     f.field_name,
                     f.field_description,
+                    f.field_type,
                     f.is_required,
                     f.is_private,
                     r.response

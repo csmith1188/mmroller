@@ -26,21 +26,81 @@
                                         <span class="text-danger">*</span>
                                     <% } %>
                                     <% if (field.is_private) { %>
-                                        <span class="badge bg-secondary">Private</span>
+                                        <span class="badge bg-secondary ms-2">
+                                            <i class="bi bi-lock-fill"></i> Private
+                                        </span>
                                     <% } %>
                                 </label>
                                 <% if (field.field_description) { %>
                                     <small class="text-muted d-block"><%= field.field_description %></small>
                                 <% } %>
                                 <% if (isViewingOwnProfile) { %>
-                                    <input type="text" 
-                                           class="form-control" 
-                                           id="field_<%= field.id %>" 
-                                           name="responses[<%= field.id %>]" 
-                                           value="<%= field.response !== null ? field.response : '' %>"
-                                           <%= field.is_required ? 'required' : '' %>>
+                                    <% if (field.field_type === 'number') { %>
+                                        <input type="number" 
+                                               class="form-control" 
+                                               id="field_<%= field.id %>" 
+                                               name="responses[<%= field.id %>]" 
+                                               value="<%= field.response !== null ? field.response : '' %>"
+                                               step="any"
+                                               <%= field.is_required ? 'required' : '' %>>
+                                    <% } else if (field.field_type === 'date') { %>
+                                        <% 
+                                            let dateValue = '';
+                                            if (field.response) {
+                                                try {
+                                                    const date = new Date(field.response);
+                                                    if (!isNaN(date.getTime())) {
+                                                        // Format as YYYY-MM-DDThh:mm
+                                                        dateValue = date.toISOString().slice(0, 16);
+                                                    }
+                                                } catch (e) {
+                                                    // Invalid date, leave value empty
+                                                }
+                                            }
+                                        %>
+                                        <input type="datetime-local" 
+                                               class="form-control" 
+                                               id="field_<%= field.id %>" 
+                                               name="responses[<%= field.id %>]" 
+                                               value="<%= dateValue %>"
+                                               <%= field.is_required ? 'required' : '' %>>
+                                    <% } else if (field.field_type === 'long') { %>
+                                        <textarea class="form-control" 
+                                                  id="field_<%= field.id %>" 
+                                                  name="responses[<%= field.id %>]" 
+                                                  rows="4"
+                                                  style="white-space: pre-wrap;"
+                                                  <%= field.is_required ? 'required' : '' %>><%= field.response !== null ? field.response : '' %></textarea>
+                                    <% } else { %>
+                                        <input type="text" 
+                                               class="form-control" 
+                                               id="field_<%= field.id %>" 
+                                               name="responses[<%= field.id %>]" 
+                                               value="<%= field.response !== null ? field.response : '' %>"
+                                               maxlength="128"
+                                               <%= field.is_required ? 'required' : '' %>>
+                                    <% } %>
                                 <% } else { %>
-                                    <p class="form-control-plaintext"><%= field.response !== null ? field.response : 'Not provided' %></p>
+                                    <p class="form-control-plaintext">
+                                        <% if (field.field_type === 'date' && field.response) { %>
+                                            <% 
+                                                try {
+                                                    const date = new Date(field.response);
+                                                    if (!isNaN(date.getTime())) { %>
+                                                        <%= date.toLocaleString() %>
+                                                    <% } else { %>
+                                                        <%= field.response %>
+                                                    <% }
+                                                } catch (e) { %>
+                                                    <%= field.response %>
+                                                <% }
+                                            %>
+                                        <% } else if (field.field_type === 'long') { %>
+                                            <div style="white-space: pre-wrap;"><%= field.response !== null ? field.response : 'Not provided' %></div>
+                                        <% } else { %>
+                                            <%= field.response !== null ? field.response : 'Not provided' %>
+                                        <% } %>
+                                    </p>
                                 <% } %>
                             </div>
                         <% } %>
