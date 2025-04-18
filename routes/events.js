@@ -1225,6 +1225,19 @@ router.post('/events/:id/participants/:userId/responses', async (req, res) => {
             return res.status(400).json({ error: 'No responses provided' });
         }
 
+        // Get custom fields for this event
+        const customFields = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT id, field_name
+                FROM event_custom_fields
+                WHERE event_id = ?
+                ORDER BY id ASC
+            `, [eventId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
         // Start transaction
         await new Promise((resolve, reject) => {
             db.run('BEGIN TRANSACTION', (err) => {
@@ -1235,10 +1248,16 @@ router.post('/events/:id/participants/:userId/responses', async (req, res) => {
 
         try {
             // Process each response
-            for (const [fieldId, response] of Object.entries(responses)) {
-                console.log(`Processing response for field ${fieldId}:`, response);
+            for (const [fieldIndex, response] of Object.entries(responses)) {
+                console.log(`Processing response for field index ${fieldIndex}:`, response);
                 
                 if (response === undefined || response === null || response.trim() === '') {
+                    continue;
+                }
+
+                const fieldId = customFields[parseInt(fieldIndex)]?.id;
+                if (!fieldId) {
+                    console.error('Invalid field index:', fieldIndex);
                     continue;
                 }
                 
