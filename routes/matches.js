@@ -692,6 +692,49 @@ router.post('/events/:id/matches', async (req, res) => {
             return res.status(400).render('error', { message: 'All players must be event participants' });
         }
 
+        // Check if all players have filled out required custom fields
+        const missingFields = await new Promise((resolve, reject) => {
+            const query = `
+                WITH required_fields AS (
+                    SELECT id, field_name
+                    FROM event_custom_fields
+                    WHERE event_id = ? AND is_required = 1
+                ),
+                missing_responses AS (
+                    SELECT 
+                        u.id as user_id,
+                        u.username as display_name,
+                        GROUP_CONCAT(rf.field_name) as missing_fields
+                    FROM users u
+                    CROSS JOIN required_fields rf
+                    LEFT JOIN participant_custom_responses pcr 
+                        ON pcr.field_id = rf.id 
+                        AND pcr.user_id = u.id
+                        AND pcr.event_id = ?
+                    WHERE u.id IN (${playerIds.map(() => '?').join(',')})
+                    AND (pcr.response IS NULL OR pcr.response = '')
+                    GROUP BY u.id, u.username
+                    HAVING missing_fields IS NOT NULL
+                )
+                SELECT * FROM missing_responses;
+            `;
+            
+            db.all(query, [eventId, eventId, ...playerIds], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows || []);
+            });
+        });
+
+        if (missingFields.length > 0) {
+            const errorMessages = missingFields.map(player => 
+                `${player.display_name} needs to fill out: ${player.missing_fields}`
+            );
+            return res.status(400).render('error', { 
+                message: 'Cannot start match. The following players have not filled out required fields:',
+                details: errorMessages
+            });
+        }
+
         // Start transaction
         await new Promise((resolve, reject) => {
             db.run('BEGIN TRANSACTION', (err) => {

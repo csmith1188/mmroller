@@ -131,7 +131,37 @@ router.get('/events/:id', async (req, res) => {
                 GROUP BY m.id
                 ORDER BY m.created_at DESC
             `, [eventId], (err, rows) => {
-                if (err) reject(err);
+                if (err) {
+                    console.error('Error fetching matches:', err);
+                    resolve([]);
+                    return;
+                }
+                if (!rows) {
+                    resolve([]);
+                    return;
+                }
+                rows.forEach(row => {
+                    if (row.player_names) {
+                        row.player_names = row.player_names.split(',');
+                    } else {
+                        row.player_names = [];
+                    }
+                    if (row.player_ids) {
+                        row.player_ids = row.player_ids.split(',').map(Number);
+                    } else {
+                        row.player_ids = [];
+                    }
+                    if (row.positions) {
+                        row.positions = row.positions.split(',').map(Number);
+                    } else {
+                        row.positions = [];
+                    }
+                    if (row.final_scores) {
+                        row.final_scores = row.final_scores.split(',').map(Number);
+                    } else {
+                        row.final_scores = [];
+                    }
+                });
                 resolve(rows);
             });
         });
