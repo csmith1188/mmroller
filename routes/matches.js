@@ -613,6 +613,42 @@ router.post('/matches/:id/finalize', (req, res) => {
                     });
                 });
 
+                // Get required custom fields and their responses
+                const requiredFields = await new Promise((resolve, reject) => {
+                    db.all(`
+                        SELECT mcf.id, mcf.field_name, mcf.is_required,
+                               GROUP_CONCAT(mcr.user_id) as responded_users
+                        FROM match_custom_fields mcf
+                        LEFT JOIN match_custom_responses mcr ON mcf.id = mcr.field_id AND mcr.match_id = ?
+                        WHERE mcf.event_id = ? AND mcf.is_required = 1
+                        GROUP BY mcf.id
+                    `, [matchId, match.event_id], (err, results) => {
+                        if (err) reject(err);
+                        else resolve(results);
+                    });
+                });
+
+                // Check if all required fields have responses from all players
+                const missingResponses = [];
+                requiredFields.forEach(field => {
+                    const respondedUsers = field.responded_users ? field.responded_users.split(',').map(Number) : [];
+                    players.forEach(player => {
+                        if (!respondedUsers.includes(player.user_id)) {
+                            missingResponses.push({
+                                field: field.field_name,
+                                player: player.display_name
+                            });
+                        }
+                    });
+                });
+
+                if (missingResponses.length > 0) {
+                    db.run('ROLLBACK');
+                    const errorMessage = 'Cannot finalize match. The following required fields are missing responses:\n' +
+                        missingResponses.map(r => `- ${r.player} is missing "${r.field}"`).join('\n');
+                    return res.status(400).render('error', { message: errorMessage });
+                }
+
                 // Update match status
                 await new Promise((resolve, reject) => {
                     db.run(`
