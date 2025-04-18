@@ -170,6 +170,118 @@
                                 </div>
                             </div>
                         <% } %>
+
+                        <% if (match.custom_fields && match.custom_fields.length > 0) { %>
+                            <h5 class="mt-4">Match Details</h5>
+                            <form id="customFieldsForm" action="/matches/<%= match.id %>/custom-responses" method="POST">
+                                <% match.custom_fields.forEach(field => { %>
+                                    <% if (match.is_admin || !field.is_private) { %>
+                                        <div class="mb-3">
+                                            <label for="field_<%= field.id %>" class="form-label">
+                                                <%= field.field_name %>
+                                                <% if (field.is_required) { %>
+                                                    <span class="text-danger">*</span>
+                                                <% } %>
+                                                <% if (field.is_private) { %>
+                                                    <span class="badge bg-secondary ms-2">
+                                                        <i class="bi bi-lock-fill"></i> Private
+                                                    </span>
+                                                <% } %>
+                                            </label>
+                                            <% if (field.field_description) { %>
+                                                <small class="text-muted d-block"><%= field.field_description %></small>
+                                            <% } %>
+                                            
+                                            <% if (match.is_player || match.is_admin) { %>
+                                                <% if (field.field_type === 'number') { %>
+                                                    <input type="number" 
+                                                           class="form-control" 
+                                                           id="field_<%= field.id %>" 
+                                                           name="responses[<%= field.id %>]" 
+                                                           value="<%= field.current_response || '' %>"
+                                                           step="any"
+                                                           <%= field.is_required ? 'required' : '' %>>
+                                                <% } else if (field.field_type === 'date') { %>
+                                                    <% 
+                                                        let dateValue = '';
+                                                        if (field.current_response) {
+                                                            try {
+                                                                const date = new Date(field.current_response);
+                                                                if (!isNaN(date.getTime())) {
+                                                                    dateValue = date.toISOString().slice(0, 16);
+                                                                }
+                                                            } catch (e) {
+                                                                // Invalid date, leave value empty
+                                                            }
+                                                        }
+                                                    %>
+                                                    <input type="datetime-local" 
+                                                           class="form-control" 
+                                                           id="field_<%= field.id %>" 
+                                                           name="responses[<%= field.id %>]" 
+                                                           value="<%= dateValue %>"
+                                                           <%= field.is_required ? 'required' : '' %>>
+                                                <% } else if (field.field_type === 'long') { %>
+                                                    <textarea class="form-control" 
+                                                              id="field_<%= field.id %>" 
+                                                              name="responses[<%= field.id %>]" 
+                                                              rows="4"
+                                                              style="white-space: pre-wrap;"
+                                                              <%= field.is_required ? 'required' : '' %>><%= field.current_response || '' %></textarea>
+                                                <% } else { %>
+                                                    <input type="text" 
+                                                           class="form-control" 
+                                                           id="field_<%= field.id %>" 
+                                                           name="responses[<%= field.id %>]" 
+                                                           value="<%= field.current_response || '' %>"
+                                                           maxlength="128"
+                                                           <%= field.is_required ? 'required' : '' %>>
+                                                <% } %>
+                                            <% } else { %>
+                                                <div class="list-group">
+                                                    <% if (field.responses && field.responses.length > 0) { %>
+                                                        <% field.responses.forEach(response => { %>
+                                                            <div class="list-group-item">
+                                                                <div class="d-flex justify-content-between align-items-center">
+                                                                    <div>
+                                                                        <strong><%= response.username %></strong>
+                                                                        <% if (field.field_type === 'date' && response.response) { %>
+                                                                            <% 
+                                                                                try {
+                                                                                    const date = new Date(response.response);
+                                                                                    if (!isNaN(date.getTime())) { %>
+                                                                                        <div><%= date.toLocaleString() %></div>
+                                                                                    <% } else { %>
+                                                                                        <div><%= response.response %></div>
+                                                                                    <% }
+                                                                                } catch (e) { %>
+                                                                                    <div><%= response.response %></div>
+                                                                                <% }
+                                                                            %>
+                                                                        <% } else if (field.field_type === 'long') { %>
+                                                                            <div style="white-space: pre-wrap;"><%= response.response %></div>
+                                                                        <% } else { %>
+                                                                            <div><%= response.response %></div>
+                                                                        <% } %>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        <% }); %>
+                                                    <% } else { %>
+                                                        <div class="list-group-item">
+                                                            <em>No responses yet</em>
+                                                        </div>
+                                                    <% } %>
+                                                </div>
+                                            <% } %>
+                                        </div>
+                                    <% } %>
+                                <% }); %>
+                                <% if (match.is_player || match.is_admin) { %>
+                                    <button type="submit" class="btn btn-primary">Save Responses</button>
+                                <% } %>
+                            </form>
+                        <% } %>
                     </div>
                 </div>
             </div>

@@ -171,11 +171,24 @@ router.get('/events/:id', async (req, res) => {
 
         // Get custom fields if user is admin
         let customFields = [];
+        let matchCustomFields = [];
         if (event.is_admin) {
             customFields = await new Promise((resolve, reject) => {
                 db.all(`
                     SELECT id, field_name, field_description, is_required, is_private
                     FROM event_custom_fields
+                    WHERE event_id = ?
+                    ORDER BY created_at ASC
+                `, [eventId], (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                });
+            });
+
+            matchCustomFields = await new Promise((resolve, reject) => {
+                db.all(`
+                    SELECT id, field_name, field_description, is_required, is_private
+                    FROM match_custom_fields
                     WHERE event_id = ?
                     ORDER BY created_at ASC
                 `, [eventId], (err, rows) => {
@@ -218,6 +231,7 @@ router.get('/events/:id', async (req, res) => {
             participants,
             matches,
             customFields,
+            matchCustomFields,
             applications,
             hasApplied,
             userId,
@@ -1393,6 +1407,149 @@ router.post('/events/:id/participants/:userId/mmr', async (req, res) => {
     } catch (error) {
         console.error('Error updating MMR:', error);
         res.status(500).json({ error: 'Error updating MMR' });
+    }
+});
+
+// Add/Update match custom fields
+router.post('/events/:id/match-fields', async (req, res) => {
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.session.userId;
+    const fields = req.body.fields || {};
+    const fieldIds = req.body.field_ids || [];
+
+    try {
+        // Check if user is admin
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM events e
+                JOIN organization_admins oa ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).send('Unauthorized: Only organization admins can manage custom fields');
+        }
+
+        // Get existing field IDs
+        const existingFields = await new Promise((resolve, reject) => {
+            db.all('SELECT id FROM match_custom_fields WHERE event_id = ?', [eventId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows.map(row => row.id));
+            });
+        });
+
+        // Determine which fields were removed
+        const submittedFieldIds = fieldIds.map(id => parseInt(id));
+        const removedFieldIds = existingFields.filter(id => !submittedFieldIds.includes(id));
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            // Delete removed fields
+            if (removedFieldIds.length > 0) {
+                await new Promise((resolve, reject) => {
+                    const placeholders = removedFieldIds.map(() => '?').join(',');
+                    const query = `DELETE FROM match_custom_fields WHERE event_id = ? AND id IN (${placeholders})`;
+                    db.run(query, [eventId, ...removedFieldIds], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
+                });
+            }
+
+            // Process remaining and new fields
+            for (let i = 0; i < fieldIds.length; i++) {
+                const fieldId = fieldIds[i];
+                const fieldData = Array.isArray(fields) ? fields[i] : fields[fieldId];
+                
+                if (!fieldData || !fieldData.field_name || fieldData.field_name.trim() === '') {
+                    continue;
+                }
+
+                const isRequired = fieldData.is_required === '1';
+                const isPrivate = fieldData.is_private === '1';
+
+                if (fieldId.startsWith('new_')) {
+                    // Insert new field
+                    await db.run(
+                        'INSERT INTO match_custom_fields (event_id, field_name, field_description, field_type, is_required, is_private) VALUES (?, ?, ?, ?, ?, ?)',
+                        [eventId, fieldData.field_name, fieldData.field_description, fieldData.field_type, isRequired, isPrivate]
+                    );
+                } else {
+                    // Update existing field
+                    await db.run(
+                        'UPDATE match_custom_fields SET field_name = ?, field_description = ?, field_type = ?, is_required = ?, is_private = ? WHERE id = ? AND event_id = ?',
+                        [fieldData.field_name, fieldData.field_description, fieldData.field_type, isRequired, isPrivate, fieldId, eventId]
+                    );
+                }
+            }
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/events/${eventId}`);
+        } catch (error) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error updating match custom fields:', error);
+        res.status(500).send('Error updating match custom fields');
+    }
+});
+
+// Delete match custom field
+router.post('/events/:id/match-fields/:fieldId/delete', async (req, res) => {
+    const db = req.app.locals.db;
+    const { id: eventId, fieldId } = req.params;
+
+    try {
+        // Check if user is admin
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                WHERE e.id = ? AND oa.user_id = ?
+            `, [eventId, req.session.userId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAdmin) {
+            return res.status(403).json({ error: 'Unauthorized' });
+        }
+
+        await new Promise((resolve, reject) => {
+            db.run('DELETE FROM match_custom_fields WHERE id = ? AND event_id = ?', [fieldId, eventId], (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        res.redirect(`/events/${eventId}`);
+    } catch (error) {
+        console.error('Error deleting match custom field:', error);
+        res.status(500).json({ error: 'Error deleting match custom field' });
     }
 });
 

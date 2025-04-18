@@ -242,43 +242,86 @@ router.get('/matches/:id', (req, res) => {
             // Check if current user is a player
             const isPlayer = players.some(player => player.user_id === parseInt(userId));
             
-            // Get match submissions
+            // Get match custom fields
             db.all(`
-                SELECT ms.*, u.username as display_name
-                FROM match_submissions ms
-                JOIN users u ON ms.user_id = u.id
-                WHERE ms.match_id = ?
-                ORDER BY ms.submitted_at DESC
-            `, [matchId], (err, submissions) => {
+                SELECT mcf.*, 
+                       GROUP_CONCAT(mcr.response) as responses,
+                       GROUP_CONCAT(mcr.user_id) as response_user_ids,
+                       GROUP_CONCAT(u.username) as response_usernames
+                FROM match_custom_fields mcf
+                LEFT JOIN match_custom_responses mcr ON mcf.id = mcr.field_id AND mcr.match_id = ?
+                LEFT JOIN users u ON mcr.user_id = u.id
+                WHERE mcf.event_id = ?
+                GROUP BY mcf.id
+                ORDER BY mcf.created_at ASC
+            `, [matchId, match.event_id], (err, customFields) => {
                 if (err) {
-                    console.error('Error fetching submissions:', err);
-                    return res.status(500).render('error', { message: 'Error fetching match submissions' });
+                    console.error('Error fetching custom fields:', err);
+                    return res.status(500).render('error', { message: 'Error fetching custom fields' });
                 }
-                
-                // Parse scores for each submission
-                const parsedSubmissions = submissions.map(sub => ({
-                    ...sub,
-                    scores: JSON.parse(sub.scores)
-                }));
-                
-                // Get current user's submission if any
-                const currentSubmission = parsedSubmissions.find(sub => sub.user_id === parseInt(userId));
-                
-                // Filter submissions based on user role
-                const visibleSubmissions = match.is_admin === 1 ? parsedSubmissions : [];
-                
-                // Add players and user info to match object
-                const matchWithPlayers = {
-                    ...match,
-                    players: players,
-                    is_player: isPlayer,
-                    current_submission: currentSubmission // Show current submission if it exists
-                };
-                
-                res.render('match', {
-                    match: matchWithPlayers,
-                    submissions: visibleSubmissions,
-                    userId: parseInt(userId)
+
+                // Process custom fields to organize responses
+                const processedFields = customFields.map(field => {
+                    const responses = field.responses ? field.responses.split(',') : [];
+                    const responseUserIds = field.response_user_ids ? field.response_user_ids.split(',').map(Number) : [];
+                    const responseUsernames = field.response_usernames ? field.response_usernames.split(',') : [];
+                    
+                    // Create an array of responses with user info
+                    const responseData = responses.map((response, index) => ({
+                        response,
+                        user_id: responseUserIds[index],
+                        username: responseUsernames[index]
+                    }));
+
+                    // Find current user's response if any
+                    const currentUserResponse = responseData.find(r => r.user_id === parseInt(userId));
+
+                    return {
+                        ...field,
+                        responses: responseData,
+                        current_response: currentUserResponse ? currentUserResponse.response : null
+                    };
+                });
+
+                // Get match submissions
+                db.all(`
+                    SELECT ms.*, u.username as display_name
+                    FROM match_submissions ms
+                    JOIN users u ON ms.user_id = u.id
+                    WHERE ms.match_id = ?
+                    ORDER BY ms.submitted_at DESC
+                `, [matchId], (err, submissions) => {
+                    if (err) {
+                        console.error('Error fetching submissions:', err);
+                        return res.status(500).render('error', { message: 'Error fetching match submissions' });
+                    }
+                    
+                    // Parse scores for each submission
+                    const parsedSubmissions = submissions.map(sub => ({
+                        ...sub,
+                        scores: JSON.parse(sub.scores)
+                    }));
+                    
+                    // Get current user's submission if any
+                    const currentSubmission = parsedSubmissions.find(sub => sub.user_id === parseInt(userId));
+                    
+                    // Filter submissions based on user role
+                    const visibleSubmissions = match.is_admin === 1 ? parsedSubmissions : [];
+                    
+                    // Add players and user info to match object
+                    const matchWithPlayers = {
+                        ...match,
+                        players: players,
+                        is_player: isPlayer,
+                        current_submission: currentSubmission, // Show current submission if it exists
+                        custom_fields: processedFields // Add processed custom fields to match object
+                    };
+                    
+                    res.render('match', {
+                        match: matchWithPlayers,
+                        submissions: visibleSubmissions,
+                        userId: parseInt(userId)
+                    });
                 });
             });
         });
@@ -794,6 +837,117 @@ router.post('/events/:id/matches', async (req, res) => {
         console.error('Error creating match:', error);
         return res.status(500).render('error', { message: 'Error creating match' });
     }
+});
+
+// Submit match custom field responses
+router.post('/matches/:id/custom-responses', (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const matchId = req.params.id;
+    const userId = req.session.userId;
+    const responses = req.body.responses;
+    
+    // Check if user is a player in the match or an admin
+    db.get(`
+        SELECT 
+            CASE WHEN EXISTS (
+                SELECT 1 FROM match_players WHERE match_id = ? AND user_id = ?
+            ) THEN 1 ELSE 0 END as is_player,
+            CASE WHEN EXISTS (
+                SELECT 1 FROM organization_admins oa
+                JOIN events e ON e.organization_id = oa.organization_id
+                JOIN matches m ON m.event_id = e.id
+                WHERE m.id = ? AND oa.user_id = ?
+            ) THEN 1 ELSE 0 END as is_admin
+    `, [matchId, userId, matchId, userId], (err, result) => {
+        if (err) {
+            console.error('Error checking user permissions:', err);
+            return res.status(500).render('error', { message: 'Error checking permissions' });
+        }
+        
+        if (!result.is_player && !result.is_admin) {
+            return res.status(403).render('error', { message: 'Unauthorized: You must be a player or admin to submit responses' });
+        }
+        
+        // Start transaction
+        db.run('BEGIN TRANSACTION', (err) => {
+            if (err) {
+                console.error('Error starting transaction:', err);
+                return res.status(500).render('error', { message: 'Error starting transaction' });
+            }
+            
+            // Process each response
+            const updates = Object.entries(responses || {}).map(([fieldId, response]) => {
+                // Ensure fieldId is an integer
+                const numericFieldId = parseInt(fieldId, 10);
+                if (isNaN(numericFieldId)) {
+                    console.error('Invalid field ID:', fieldId);
+                    return Promise.reject(new Error('Invalid field ID'));
+                }
+
+                return new Promise((resolve, reject) => {
+                    // First verify that this field exists and belongs to the match's event
+                    db.get(`
+                        SELECT 1 FROM match_custom_fields mcf
+                        JOIN matches m ON m.event_id = mcf.event_id
+                        WHERE mcf.id = ? AND m.id = ?
+                    `, [numericFieldId, matchId], (err, exists) => {
+                        if (err) {
+                            console.error('Error verifying field:', err);
+                            reject(err);
+                            return;
+                        }
+                        
+                        if (!exists) {
+                            console.error('Field does not exist or does not belong to this match:', numericFieldId);
+                            reject(new Error('Invalid field ID'));
+                            return;
+                        }
+
+                        // Delete existing response if any
+                        db.run(`
+                            DELETE FROM match_custom_responses
+                            WHERE match_id = ? AND field_id = ? AND user_id = ?
+                        `, [matchId, numericFieldId, userId], (err) => {
+                            if (err) {
+                                reject(err);
+                                return;
+                            }
+                            
+                            // Insert new response
+                            db.run(`
+                                INSERT INTO match_custom_responses (match_id, field_id, user_id, response)
+                                VALUES (?, ?, ?, ?)
+                            `, [matchId, numericFieldId, userId, response], (err) => {
+                                if (err) reject(err);
+                                else resolve();
+                            });
+                        });
+                    });
+                });
+            });
+            
+            // Execute all updates
+            Promise.all(updates)
+                .then(() => {
+                    // Commit transaction
+                    db.run('COMMIT', (err) => {
+                        if (err) {
+                            console.error('Error committing transaction:', err);
+                            return res.status(500).render('error', { message: 'Error saving responses' });
+                        }
+                        res.redirect(`/matches/${matchId}?success=Responses saved successfully`);
+                    });
+                })
+                .catch((err) => {
+                    // Rollback transaction on error
+                    db.run('ROLLBACK', () => {
+                        console.error('Error saving responses:', err);
+                        res.status(500).render('error', { message: 'Error saving responses' });
+                    });
+                });
+        });
+    });
 });
 
 module.exports = router; 
