@@ -414,12 +414,19 @@
                     <% } %>
                     
                     <% if (event.is_admin) { %>
-                        <form action="/events/<%= event.id %>/toggle-visibility" method="POST" class="mb-3">
-                            <button type="submit" class="btn btn-<%= event.hidden ? 'success' : 'warning' %>">
-                                <i class="bi bi-eye<%= event.hidden ? '-slash' : '' %>"></i>
-                                <%= event.hidden ? 'Show Event' : 'Hide Event' %>
-                            </button>
-                        </form>
+                        <div class="mb-3">
+                            <div class="mb-2">
+                                <strong>Event Visibility:</strong>
+                                <span class="badge bg-<%= event.hidden ? 'secondary' : 'success' %>">
+                                    <%= event.hidden ? 'Hidden' : 'Visible' %>
+                                </span>
+                            </div>
+                            <form action="/events/<%= event.id %>/toggle-visibility" method="POST">
+                                <button type="submit" class="btn btn-outline-primary btn-sm">
+                                    <%= event.hidden ? 'Show Event' : 'Hide Event' %>
+                                </button>
+                            </form>
+                        </div>
 
                         <div class="mb-3">
                             <div class="mb-2">
@@ -432,10 +439,30 @@
                                 </button>
                             </form>
                         </div>
+
+                        <div class="mb-3">
+                            <div class="mb-2">
+                                <strong>Match Blind Sharing:</strong>
+                                <span class="badge bg-<%= event.match_blind_sharing ? 'success' : 'secondary' %>">
+                                    <%= event.match_blind_sharing ? 'Enabled' : 'Disabled' %>
+                                </span>
+                            </div>
+                            <form action="/events/<%= event.id %>/toggle-blind-sharing" method="POST">
+                                <button type="submit" class="btn btn-outline-primary btn-sm">
+                                    <%= event.match_blind_sharing ? 'Disable' : 'Enable' %> Blind Sharing
+                                </button>
+                            </form>
+                        </div>
                     <% } else { %>
                         <div class="mb-3">
                             <strong>Scoring System:</strong>
                             <span class="badge bg-info"><%= event.lowest_score_wins ? 'Lowest Score Wins' : 'Highest Score Wins' %></span>
+                        </div>
+                        <div class="mb-3">
+                            <strong>Match Blind Sharing:</strong>
+                            <span class="badge bg-<%= event.match_blind_sharing ? 'success' : 'secondary' %>">
+                                <%= event.match_blind_sharing ? 'Enabled' : 'Disabled' %>
+                            </span>
                         </div>
                     <% } %>
                     

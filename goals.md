@@ -1,7 +1,6 @@
 - user profile description
 - unified alerts and feedback modal
 - verify discorders can change username and description but not email
-- custom fields per match per player
 - custom fields foldout if too long
 - sanctioned matches (custom fields revealed on admin approval)
 - event manual MMR input

@@ -644,6 +644,41 @@ router.post('/events/:id/toggle-scoring', (req, res) => {
     });
 });
 
+// Toggle match blind sharing
+router.post('/events/:id/toggle-blind-sharing', (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.session.userId;
+
+    // Verify user is admin
+    db.get(`
+        SELECT e.*, e.organization_id
+        FROM events e
+        WHERE e.id = ? AND EXISTS (
+            SELECT 1 FROM organization_admins oa
+            WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+        )
+    `, [eventId, userId], (err, event) => {
+        if (err || !event) {
+            return res.status(403).send('Unauthorized');
+        }
+
+        // Toggle the match_blind_sharing value
+        db.run(`
+            UPDATE events
+            SET match_blind_sharing = CASE WHEN match_blind_sharing = 1 THEN 0 ELSE 1 END
+            WHERE id = ?
+        `, [eventId], (err) => {
+            if (err) {
+                console.error(err);
+                return res.status(500).send('Error updating match blind sharing');
+            }
+            res.redirect(`/events/${eventId}`);
+        });
+    });
+});
+
 // Kick participant from event
 router.post('/events/:id/kick/:userId', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
