@@ -112,6 +112,90 @@
             <% } else { %>
                 <p class="text-muted">No custom fields have been set up for this event.</p>
             <% } %>
+
+            <h4 class="mt-4">Event Statistics</h4>
+            <div class="row">
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-title">MMR</h6>
+                            <span class="badge bg-primary fs-5"><%= participant.mmr %></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-title">Matches</h6>
+                            <span class="fs-5"><%= participant.matches_played || 0 %></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-title">Wins</h6>
+                            <span class="text-success fs-5"><%= participant.wins || 0 %></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-title">Losses</h6>
+                            <span class="text-danger fs-5"><%= (participant.matches_played || 0) - (participant.wins || 0) %></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <h4 class="mt-4">Match History</h4>
+            <% if (matches && matches.length > 0) { %>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Match #</th>
+                                <th>Players</th>
+                                <th>Result</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <% matches.forEach(match => { %>
+                                <tr>
+                                    <td>
+                                        <a href="/matches/<%= match.id %>" class="text-decoration-none">
+                                            #<%= match.id %>
+                                        </a>
+                                    </td>
+                                    <td><%= match.player_names.join(', ') %></td>
+                                    <td>
+                                        <% if (match.winner_id === participant.user_id) { %>
+                                            <span class="text-success">Won</span>
+                                        <% } else if (match.status === 'completed') { %>
+                                            <span class="text-danger">Lost</span>
+                                        <% } else if (match.status === 'forfeit') { %>
+                                            <span class="text-danger">Forfeit</span>
+                                        <% } else { %>
+                                            <span class="text-warning">Pending</span>
+                                        <% } %>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-<%= match.status === 'completed' ? 'success' : (match.status === 'forfeit' ? 'danger' : 'warning') %>">
+                                            <%= match.status %>
+                                        </span>
+                                    </td>
+                                    <td><%= new Date(match.created_at).toLocaleString() %></td>
+                                </tr>
+                            <% }); %>
+                        </tbody>
+                    </table>
+                </div>
+            <% } else { %>
+                <p class="text-muted">No matches played yet.</p>
+            <% } %>
         </div>
     </div>
 </div>

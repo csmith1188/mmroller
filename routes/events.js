@@ -1090,6 +1090,7 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
         const participant = await new Promise((resolve, reject) => {
             const query = `
                 SELECT u.id, u.username as display_name, u.created_at,
+                       pes.mmr, pes.matches_played, pes.wins,
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_admins oa
                            JOIN events e ON e.organization_id = oa.organization_id
@@ -1097,6 +1098,7 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
                        ) THEN 1 ELSE 0 END as is_admin
                 FROM users u
                 JOIN event_participants ep ON u.id = ep.user_id
+                LEFT JOIN player_event_stats pes ON pes.event_id = ep.event_id AND pes.user_id = u.id
                 WHERE u.id = ? AND ep.event_id = ?
             `;
             
@@ -1109,6 +1111,44 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
         if (!participant) {
             return res.status(404).render('error', { message: 'Participant not found' });
         }
+
+        // Get matches for this participant
+        const matches = await new Promise((resolve, reject) => {
+            const query = `
+                SELECT 
+                    m.id,
+                    m.status,
+                    m.created_at,
+                    m.winner_id,
+                    GROUP_CONCAT(u.username) as player_names
+                FROM matches m
+                JOIN match_players mp ON m.id = mp.match_id
+                JOIN users u ON mp.user_id = u.id
+                WHERE m.event_id = ?
+                AND EXISTS (
+                    SELECT 1 FROM match_players 
+                    WHERE match_id = m.id AND user_id = ?
+                )
+                GROUP BY m.id
+                ORDER BY m.created_at DESC
+            `;
+            
+            db.all(query, [eventId, userId], (err, rows) => {
+                if (err) {
+                    console.error('Error fetching matches:', err);
+                    resolve([]);
+                    return;
+                }
+                if (!rows) {
+                    resolve([]);
+                    return;
+                }
+                rows.forEach(row => {
+                    row.player_names = row.player_names.split(',');
+                });
+                resolve(rows);
+            });
+        });
 
         // Get custom fields and responses
         const customFields = await new Promise((resolve, reject) => {
@@ -1159,6 +1199,7 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
         const templateData = {
             participant,
             customFields,
+            matches,
             isViewingOwnProfile,
             eventId,
             userId,
