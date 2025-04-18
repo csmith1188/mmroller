@@ -195,10 +195,11 @@
                                             <% if (match.is_player || match.is_admin) { %>
                                                 <% if (field.field_type === 'number') { %>
                                                     <input type="number" 
-                                                           class="form-control" 
+                                                           class="form-control custom-field-input" 
                                                            id="field_<%= field.id %>" 
                                                            name="responses[<%= field.id %>]" 
                                                            value="<%= field.current_response || '' %>"
+                                                           data-field-id="<%= field.id %>"
                                                            step="any"
                                                            <%= field.is_required ? 'required' : '' %>>
                                                 <% } else if (field.field_type === 'date') { %>
@@ -216,63 +217,30 @@
                                                         }
                                                     %>
                                                     <input type="datetime-local" 
-                                                           class="form-control" 
+                                                           class="form-control custom-field-input" 
                                                            id="field_<%= field.id %>" 
                                                            name="responses[<%= field.id %>]" 
                                                            value="<%= dateValue %>"
+                                                           data-field-id="<%= field.id %>"
                                                            <%= field.is_required ? 'required' : '' %>>
                                                 <% } else if (field.field_type === 'long') { %>
-                                                    <textarea class="form-control" 
+                                                    <textarea class="form-control custom-field-input" 
                                                               id="field_<%= field.id %>" 
                                                               name="responses[<%= field.id %>]" 
+                                                              data-field-id="<%= field.id %>"
                                                               rows="4"
                                                               style="white-space: pre-wrap;"
                                                               <%= field.is_required ? 'required' : '' %>><%= field.current_response || '' %></textarea>
                                                 <% } else { %>
                                                     <input type="text" 
-                                                           class="form-control" 
+                                                           class="form-control custom-field-input" 
                                                            id="field_<%= field.id %>" 
                                                            name="responses[<%= field.id %>]" 
                                                            value="<%= field.current_response || '' %>"
+                                                           data-field-id="<%= field.id %>"
                                                            maxlength="128"
                                                            <%= field.is_required ? 'required' : '' %>>
                                                 <% } %>
-                                            <% } else { %>
-                                                <div class="list-group">
-                                                    <% if (field.responses && field.responses.length > 0) { %>
-                                                        <% field.responses.forEach(response => { %>
-                                                            <div class="list-group-item">
-                                                                <div class="d-flex justify-content-between align-items-center">
-                                                                    <div>
-                                                                        <strong><%= response.username %></strong>
-                                                                        <% if (field.field_type === 'date' && response.response) { %>
-                                                                            <% 
-                                                                                try {
-                                                                                    const date = new Date(response.response);
-                                                                                    if (!isNaN(date.getTime())) { %>
-                                                                                        <div><%= date.toLocaleString() %></div>
-                                                                                    <% } else { %>
-                                                                                        <div><%= response.response %></div>
-                                                                                    <% }
-                                                                                } catch (e) { %>
-                                                                                    <div><%= response.response %></div>
-                                                                                <% }
-                                                                            %>
-                                                                        <% } else if (field.field_type === 'long') { %>
-                                                                            <div style="white-space: pre-wrap;"><%= response.response %></div>
-                                                                        <% } else { %>
-                                                                            <div><%= response.response %></div>
-                                                                        <% } %>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        <% }); %>
-                                                    <% } else { %>
-                                                        <div class="list-group-item">
-                                                            <em>No responses yet</em>
-                                                        </div>
-                                                    <% } %>
-                                                </div>
                                             <% } %>
                                         </div>
                                     <% } %>
@@ -281,6 +249,47 @@
                                     <button type="submit" class="btn btn-primary">Save Responses</button>
                                 <% } %>
                             </form>
+
+                            <script>
+                                document.getElementById('customFieldsForm').addEventListener('submit', function(e) {
+                                    e.preventDefault();
+                                    
+                                    // Collect all form data
+                                    const formData = new FormData(this);
+                                    const responses = {};
+                                    
+                                    // Log all form inputs
+                                    console.log('Form inputs:');
+                                    this.querySelectorAll('.custom-field-input').forEach(input => {
+                                        const fieldId = input.getAttribute('data-field-id');
+                                        const value = input.value;
+                                        console.log(`Field ID: ${fieldId}, Value: ${value}`);
+                                        responses[fieldId] = value;
+                                    });
+                                    
+                                    // Log the structured responses
+                                    console.log('Structured responses:', responses);
+                                    
+                                    // Submit the form programmatically
+                                    fetch(this.action, {
+                                        method: 'POST',
+                                        headers: {
+                                            'Content-Type': 'application/x-www-form-urlencoded',
+                                        },
+                                        body: new URLSearchParams({
+                                            responses: JSON.stringify(responses)
+                                        })
+                                    }).then(response => {
+                                        if (response.ok) {
+                                            window.location.href = response.url;
+                                        } else {
+                                            console.error('Error submitting form:', response);
+                                        }
+                                    }).catch(error => {
+                                        console.error('Error:', error);
+                                    });
+                                });
+                            </script>
                         <% } %>
                     </div>
                 </div>

@@ -845,7 +845,16 @@ router.post('/matches/:id/custom-responses', (req, res) => {
     const db = req.app.locals.db;
     const matchId = req.params.id;
     const userId = req.session.userId;
-    const responses = req.body.responses;
+    
+    // Parse the JSON-encoded responses
+    let responses;
+    try {
+        responses = JSON.parse(req.body.responses);
+        console.log('Parsed responses:', responses);
+    } catch (err) {
+        console.error('Error parsing responses:', err);
+        return res.status(400).render('error', { message: 'Invalid responses format' });
+    }
     
     // Check if user is a player in the match or an admin
     db.get(`
@@ -877,74 +886,81 @@ router.post('/matches/:id/custom-responses', (req, res) => {
             }
             
             // Process each response
-            const updates = Object.entries(responses || {}).map(([fieldId, response]) => {
-                // Ensure fieldId is an integer
-                const numericFieldId = parseInt(fieldId, 10);
-                if (isNaN(numericFieldId)) {
-                    console.error('Invalid field ID:', fieldId);
-                    return Promise.reject(new Error('Invalid field ID'));
-                }
-
+            const updates = Object.entries(responses).map(([fieldId, response]) => {
                 return new Promise((resolve, reject) => {
-                    // First verify that this field exists and belongs to the match's event
-                    db.get(`
-                        SELECT 1 FROM match_custom_fields mcf
-                        JOIN matches m ON m.event_id = mcf.event_id
-                        WHERE mcf.id = ? AND m.id = ?
-                    `, [numericFieldId, matchId], (err, exists) => {
+                    // Convert fieldId to integer
+                    const fieldIdInt = parseInt(fieldId);
+                    console.log('Processing field:', {
+                        originalFieldId: fieldId,
+                        parsedFieldId: fieldIdInt,
+                        response: response,
+                        responseType: typeof response
+                    });
+                    
+                    if (isNaN(fieldIdInt)) {
+                        console.error('Invalid field ID:', fieldId);
+                        reject(new Error(`Invalid field ID: ${fieldId}`));
+                        return;
+                    }
+
+                    // Delete existing response if any
+                    db.run(`
+                        DELETE FROM match_custom_responses
+                        WHERE match_id = ? AND field_id = ? AND user_id = ?
+                    `, [matchId, fieldIdInt, userId], (err) => {
                         if (err) {
-                            console.error('Error verifying field:', err);
+                            console.error('Error deleting existing response:', err);
                             reject(err);
                             return;
                         }
                         
-                        if (!exists) {
-                            console.error('Field does not exist or does not belong to this match:', numericFieldId);
-                            reject(new Error('Invalid field ID'));
-                            return;
-                        }
-
-                        // Delete existing response if any
+                        console.log('Deleted existing response for field:', fieldIdInt);
+                        
+                        // Insert new response
                         db.run(`
-                            DELETE FROM match_custom_responses
-                            WHERE match_id = ? AND field_id = ? AND user_id = ?
-                        `, [matchId, numericFieldId, userId], (err) => {
+                            INSERT INTO match_custom_responses (match_id, field_id, user_id, response)
+                            VALUES (?, ?, ?, ?)
+                        `, [matchId, fieldIdInt, userId, response], (err) => {
                             if (err) {
+                                console.error('Error inserting new response:', err);
                                 reject(err);
-                                return;
+                            } else {
+                                console.log('Successfully inserted response for field:', fieldIdInt);
+                                resolve();
                             }
-                            
-                            // Insert new response
-                            db.run(`
-                                INSERT INTO match_custom_responses (match_id, field_id, user_id, response)
-                                VALUES (?, ?, ?, ?)
-                            `, [matchId, numericFieldId, userId, response], (err) => {
-                                if (err) reject(err);
-                                else resolve();
-                            });
                         });
                     });
                 });
             });
             
-            // Execute all updates
+            if (updates.length === 0) {
+                console.log('No responses to process');
+                db.run('COMMIT', (err) => {
+                    if (err) {
+                        console.error('Error committing transaction:', err);
+                        return res.status(500).render('error', { message: 'Error saving responses' });
+                    }
+                    res.redirect(`/matches/${matchId}`);
+                });
+                return;
+            }
+            
             Promise.all(updates)
                 .then(() => {
-                    // Commit transaction
                     db.run('COMMIT', (err) => {
                         if (err) {
                             console.error('Error committing transaction:', err);
                             return res.status(500).render('error', { message: 'Error saving responses' });
                         }
-                        res.redirect(`/matches/${matchId}?success=Responses saved successfully`);
+                        console.log('Successfully committed all responses');
+                        res.redirect(`/matches/${matchId}`);
                     });
                 })
-                .catch((err) => {
-                    // Rollback transaction on error
-                    db.run('ROLLBACK', () => {
-                        console.error('Error saving responses:', err);
-                        res.status(500).render('error', { message: 'Error saving responses' });
-                    });
+                .catch(err => {
+                    console.error('Error in Promise.all:', err);
+                    db.run('ROLLBACK');
+                    console.error('Error saving responses:', err);
+                    res.status(500).render('error', { message: 'Error saving responses' });
                 });
         });
     });
