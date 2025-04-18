@@ -1,3 +1,4 @@
+- require admin approval: can't auto-complete match with matching scores
 - user profile description
 - unified alerts and feedback modal
 - verify discorders can change username and description but not email
