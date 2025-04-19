@@ -65,7 +65,7 @@ router.post('/register', redirectIfLoggedIn, async (req, res) => {
     
     // Validate input
     if (!username || !password || !email) {
-        return res.render('register', { error: 'All fields are required' });
+        return res.status(400).render('error', { message: 'All fields are required' });
     }
     
     const verificationToken = generateVerificationToken();
@@ -73,7 +73,7 @@ router.post('/register', redirectIfLoggedIn, async (req, res) => {
     bcrypt.hash(password, 10, async (err, hash) => {
         if (err) {
             console.error('Password hashing error:', err);
-            return res.render('register', { error: 'Error creating account. Please try again.' });
+            return res.status(500).render('error', { message: 'Error creating account. Please try again.' });
         }
         
         db.run(
@@ -84,12 +84,12 @@ router.post('/register', redirectIfLoggedIn, async (req, res) => {
                     console.error('Registration error:', err);
                     if (err.code === 'SQLITE_CONSTRAINT') {
                         if (err.message.includes('users.username')) {
-                            return res.render('register', { error: 'Username already exists' });
+                            return res.status(400).render('error', { message: 'Username already exists' });
                         } else if (err.message.includes('users.email')) {
-                            return res.render('register', { error: 'Email already exists' });
+                            return res.status(400).render('error', { message: 'Email already exists' });
                         }
                     }
-                    return res.render('register', { error: 'Error creating account. Please try again.' });
+                    return res.status(500).render('error', { message: 'Error creating account. Please try again.' });
                 }
                 
                 const newUser = {
@@ -108,7 +108,7 @@ router.post('/register', redirectIfLoggedIn, async (req, res) => {
                 req.login(newUser, (err) => {
                     if (err) {
                         console.error('Passport login error:', err);
-                        return res.render('register', { error: 'Error creating account. Please try again.' });
+                        return res.status(500).render('error', { message: 'Error creating account. Please try again.' });
                     }
                     res.redirect('/profile');
                 });
@@ -128,10 +128,56 @@ router.get('/discord', passport.authenticate('discord'));
 
 router.get('/discord/callback', 
     passport.authenticate('discord', { failureRedirect: '/login' }),
-    (req, res) => {
-        // Set session userId for compatibility
-        req.session.userId = req.user.id;
-        res.redirect('/profile');
+    async (req, res) => {
+        const db = req.app.locals.db;
+        const discordUser = req.user;
+        
+        try {
+            // Check if user with this email already exists
+            const existingUser = await new Promise((resolve, reject) => {
+                db.get('SELECT * FROM users WHERE email = ?', [discordUser.email], (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                });
+            });
+
+            if (existingUser) {
+                // If user exists, update their Discord info
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        'UPDATE users SET discord_id = ?, username = ? WHERE id = ?',
+                        [discordUser.id, discordUser.username, existingUser.id],
+                        (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        }
+                    );
+                });
+                
+                // Set session userId for compatibility
+                req.session.userId = existingUser.id;
+                return res.redirect('/profile');
+            }
+
+            // If no existing user, create new one
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO users (username, email, discord_id, verified) VALUES (?, ?, ?, 1)',
+                    [discordUser.username, discordUser.email, discordUser.id],
+                    function(err) {
+                        if (err) reject(err);
+                        resolve(this.lastID);
+                    }
+                );
+            });
+
+            // Set session userId for compatibility
+            req.session.userId = discordUser.id;
+            res.redirect('/profile');
+        } catch (error) {
+            console.error('Discord OAuth error:', error);
+            res.status(500).render('error', { message: 'Error processing Discord login' });
+        }
     }
 );
 
