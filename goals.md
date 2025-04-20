@@ -1,4 +1,8 @@
+- date out of range error
+- all errors catch
+- custom field logging
 - events require applications toggle
+- What fields can non-players see in a match?
 - links to profiles in applications
 - event organizers
 - remove query param messages from participants
