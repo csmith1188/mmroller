@@ -1,4 +1,4 @@
-- email broken
+- events require applications toggle
 - links to profiles in applications
 - event organizers
 - remove query param messages from participants
@@ -8,6 +8,7 @@
 - verify discorders can change username and description but not email
 - custom fields foldout if too long
 - org privacy toggle
+- invite system
 - only org members apply to events
 - orgs in your profile even when banned
 - does banning from orgs kick from events, making them ununbannable?
