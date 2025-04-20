@@ -226,28 +226,6 @@ router.get('/events/:id', async (req, res) => {
             });
         });
 
-        // Get custom responses for participants
-        const customResponses = await new Promise((resolve, reject) => {
-            db.all(`
-                SELECT pcr.*, u.username
-                FROM participant_custom_responses pcr
-                JOIN users u ON pcr.user_id = u.id
-                WHERE pcr.event_id = ?
-            `, [eventId], (err, rows) => {
-                if (err) reject(err);
-                else resolve(rows);
-            });
-        });
-
-        // Organize custom responses by user and field
-        const responsesByUser = {};
-        customResponses.forEach(response => {
-            if (!responsesByUser[response.user_id]) {
-                responsesByUser[response.user_id] = {};
-            }
-            responsesByUser[response.user_id][response.field_id] = response;
-        });
-
         res.render('event', {
             event,
             participants,
@@ -258,8 +236,7 @@ router.get('/events/:id', async (req, res) => {
             hasApplied,
             userId,
             isParticipant: event.is_participant,
-            isAdmin: event.is_admin,
-            responsesByUser
+            isAdmin: event.is_admin
         });
     } catch (error) {
         console.error('Error fetching event details:', error);
