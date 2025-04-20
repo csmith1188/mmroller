@@ -3,20 +3,56 @@
 <div class="container mt-4">
     <div class="card">
         <div class="card-header">
-            <h2 class="mb-0">
-                <a href="/profile/<%= participant.user_id %>" class="text-decoration-none">
-                    <%= participant.display_name %>
-                </a>
-                <% if (participant.is_organizer) { %>
-                    <span class="badge bg-primary ms-2">Event Organizer</span>
-                <% } %>
-                <% if (participant.is_org_admin) { %>
-                    <span class="badge bg-info ms-2">Org Admin</span>
-                <% } %>
-            </h2>
-            <small class="text-muted">Joined on <%= new Date(participant.created_at).toLocaleDateString() %></small>
+            <div class="d-flex justify-content-between align-items-center">
+                <h2 class="mb-0">
+                    <a href="/profile/<%= participant.user_id %>" class="text-decoration-none">
+                        <%= participant.display_name %>
+                    </a>
+                    <% if (participant.is_org_admin) { %>
+                        <span class="badge bg-info ms-2">Org Admin</span>
+                    <% } else if (participant.is_organizer) { %>
+                        <span class="badge bg-primary ms-2">Event Organizer</span>
+                    <% } %>
+                </h2>
+                <a href="/events/<%= eventId %>" class="btn btn-outline-primary">Back to Event</a>
+            </div>
         </div>
         <div class="card-body">
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-title">MMR</h6>
+                            <span class="badge bg-primary fs-5"><%= participant.mmr %></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-title">Wins</h6>
+                            <span class="text-success fs-5"><%= participant.wins || 0 %></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-title">Losses</h6>
+                            <span class="text-danger fs-5"><%= participant.losses || 0 %></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="card">
+                        <div class="card-body text-center">
+                            <h6 class="card-title">Matches</h6>
+                            <span class="fs-5"><%= participant.matches_played || 0 %></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <% if (messages && messages.length > 0) { %>
                 <% messages.forEach(function(message) { %>
                     <div class="alert alert-<%= message.type %>">

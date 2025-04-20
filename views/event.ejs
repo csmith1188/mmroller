@@ -141,11 +141,10 @@
                                     <tr class="participant-row" data-participant-id="<%= participant.id %>">
                                         <td>
                                             <%= participant.display_name %>
-                                            <% if (participant.is_organizer) { %>
-                                                <span class="badge bg-primary ms-2">Event Admin</span>
-                                            <% } %>
                                             <% if (participant.is_org_admin) { %>
                                                 <span class="badge bg-info ms-2">Org Admin</span>
+                                            <% } else if (participant.is_organizer) { %>
+                                                <span class="badge bg-primary ms-2">Event Admin</span>
                                             <% } %>
                                         </td>
                                         <td class="text-end">
