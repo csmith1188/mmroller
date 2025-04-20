@@ -1,7 +1,3 @@
-- org privacy toggle
-- org privacy handling
-- only org members apply to events
-- events require applications toggle
 - event organizers
 - custom fields foldout if too long
 - What fields can non-players see in a match?
@@ -19,6 +15,7 @@
 - orgs in your profile even when banned
 - does banning from orgs kick from events, making them ununbannable?
 - forfeit kicked/banned handling (undo matche results)
+- delete events
 - Teams
 - Tournaments
 - stylesheet

@@ -21,6 +21,42 @@
                                 <label for="description" class="form-label">Description</label>
                                 <textarea class="form-control" id="description" name="description" rows="3"><%= event.description || '' %></textarea>
                             </div>
+                            <% if (event.is_admin) { %>
+                                <div class="mb-3">
+                                    <label class="form-label">Event Visibility</label>
+                                    <div class="btn-group w-100" role="group">
+                                        <input type="radio" class="btn-check visibility-radio" name="visibility" id="visibility_hidden" value="hidden" autocomplete="off" 
+                                               <%= event.visibility === 'hidden' ? 'checked' : '' %>>
+                                        <label class="btn btn-outline-secondary" for="visibility_hidden" title="Event is hidden from listings">
+                                            Hidden
+                                        </label>
+
+                                        <input type="radio" class="btn-check visibility-radio" name="visibility" id="visibility_private" value="private" autocomplete="off"
+                                               <%= event.visibility === 'private' ? 'checked' : '' %>>
+                                        <label class="btn btn-outline-secondary" for="visibility_private" title="Only organization members can view and join">
+                                            Private
+                                        </label>
+
+                                        <input type="radio" class="btn-check visibility-radio" name="visibility" id="visibility_public" value="public" autocomplete="off"
+                                               <%= event.visibility === 'public' ? 'checked' : '' %>>
+                                        <label class="btn btn-outline-secondary" for="visibility_public" title="Anyone can view, but only organization members can join">
+                                            Public
+                                        </label>
+
+                                        <input type="radio" class="btn-check visibility-radio" name="visibility" id="visibility_open" value="open" autocomplete="off"
+                                               <%= event.visibility === 'open' ? 'checked' : '' %>>
+                                        <label class="btn btn-outline-secondary" for="visibility_open" title="Anyone can view and join">
+                                            Open
+                                        </label>
+                                    </div>
+                                    <div class="form-text mt-1" id="visibility-description">
+                                        <%= event.visibility === 'hidden' ? 'Event is hidden from listings' :
+                                            event.visibility === 'private' ? 'Only organization members can view and join' :
+                                            event.visibility === 'public' ? 'Anyone can view, but only organization members can join' :
+                                            'Anyone can view and join' %>
+                                    </div>
+                                </div>
+                            <% } %>
                             <button type="submit" class="btn btn-primary">Update Event</button>
                         </form>
                     <% } else { %>
@@ -420,20 +456,6 @@
                     <% if (event.is_admin) { %>
                         <div class="mb-3">
                             <div class="mb-2">
-                                <strong>Event Visibility:</strong>
-                                <span class="badge bg-<%= event.hidden ? 'secondary' : 'success' %>">
-                                    <%= event.hidden ? 'Hidden' : 'Visible' %>
-                                </span>
-                            </div>
-                            <form action="/events/<%= event.id %>/toggle-visibility" method="POST">
-                                <button type="submit" class="btn btn-outline-primary btn-sm">
-                                    <%= event.hidden ? 'Show Event' : 'Hide Event' %>
-                                </button>
-                            </form>
-                        </div>
-
-                        <div class="mb-3">
-                            <div class="mb-2">
                                 <strong>Scoring System:</strong>
                                 <span class="badge bg-info"><%= event.lowest_score_wins ? 'Lowest Score Wins' : 'Highest Score Wins' %></span>
                             </div>
@@ -475,7 +497,9 @@
                             <button type="button" class="btn btn-secondary" disabled>Application Pending</button>
                         <% } else { %>
                             <form action="/events/<%= event.id %>/apply" method="POST">
-                                <button type="submit" class="btn btn-primary">Apply to Join</button>
+                                <button type="submit" class="btn btn-primary" <%= applyButtonDisabled ? 'disabled' : '' %>>
+                                    <%= applyButtonText %>
+                                </button>
                             </form>
                         <% } %>
                     <% } %>
@@ -553,6 +577,23 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             fieldCount = fields.length;
         }
+    });
+
+    // Visibility description handling
+    const visibilityDescriptions = {
+        'hidden': 'Event is hidden from listings',
+        'private': 'Only organization members can view and join',
+        'public': 'Anyone can view, but only organization members can join',
+        'open': 'Anyone can view and join'
+    };
+
+    const visibilityRadios = document.querySelectorAll('.visibility-radio');
+    const visibilityDescription = document.getElementById('visibility-description');
+
+    visibilityRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            visibilityDescription.textContent = visibilityDescriptions[this.value];
+        });
     });
 });
 

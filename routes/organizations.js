@@ -222,12 +222,27 @@ router.get('/organizations/:id', async (req, res) => {
         const events = await new Promise((resolve, reject) => {
             db.all(`
                 SELECT e.*, 
-                       CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant
+                       CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins 
+                           WHERE organization_id = e.organization_id AND user_id = ?
+                       ) THEN 1 ELSE 0 END as is_admin
                 FROM events e
                 LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
                 WHERE e.organization_id = ?
+                AND (
+                    e.visibility != 'hidden'  -- Show non-hidden events
+                    OR EXISTS (  -- Show hidden events if user is admin
+                        SELECT 1 FROM organization_admins oa
+                        WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+                    )
+                    OR EXISTS (  -- Show hidden events if user is participant
+                        SELECT 1 FROM event_participants ep2
+                        WHERE ep2.event_id = e.id AND ep2.user_id = ?
+                    )
+                )
                 ORDER BY e.start_date DESC
-            `, [userId, orgId], (err, rows) => {
+            `, [userId, userId, orgId, userId, userId], (err, rows) => {
                 if (err) reject(err);
                 resolve(rows);
             });
@@ -1024,9 +1039,19 @@ router.post('/organizations/:id/apply', async (req, res) => {
     }
 
     try {
-        // Get organization visibility
+        // Get organization visibility and check if user is banned
         const org = await new Promise((resolve, reject) => {
-            db.get('SELECT visibility FROM organizations WHERE id = ?', [orgId], (err, row) => {
+            db.get(`
+                SELECT o.visibility,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_bans 
+                           WHERE organization_id = o.id 
+                           AND user_id = ? 
+                           AND status = 'active'
+                       ) THEN 1 ELSE 0 END as is_banned
+                FROM organizations o 
+                WHERE o.id = ?
+            `, [userId, orgId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -1034,6 +1059,10 @@ router.post('/organizations/:id/apply', async (req, res) => {
 
         if (!org) {
             return res.status(404).render('error', { message: 'Organization not found' });
+        }
+
+        if (org.is_banned) {
+            return res.status(403).render('error', { message: 'You are banned from this organization' });
         }
 
         // Check if applications are allowed
@@ -1093,6 +1122,24 @@ router.post('/organizations/:id/apply', async (req, res) => {
                             resolve();
                         }
                     );
+                });
+
+                // Also automatically join all open events in this organization
+                await new Promise((resolve, reject) => {
+                    db.run(`
+                        INSERT INTO event_participants (event_id, user_id)
+                        SELECT id, ?
+                        FROM events
+                        WHERE organization_id = ?
+                        AND visibility = 'open'
+                        AND NOT EXISTS (
+                            SELECT 1 FROM event_participants
+                            WHERE event_id = events.id AND user_id = ?
+                        )
+                    `, [userId, orgId, userId], (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    });
                 });
             } else {
                 // For public organizations, create application

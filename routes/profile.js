@@ -102,8 +102,16 @@ router.get('/profile', async (req, res) => {
                 JOIN event_participants ep ON e.id = ep.event_id
                 LEFT JOIN player_event_stats pes ON e.id = pes.event_id AND pes.user_id = ?
                 WHERE ep.user_id = ?
+                AND (
+                    e.visibility != 'hidden'  -- Show non-hidden events
+                    OR EXISTS (  -- Show hidden events if user is admin
+                        SELECT 1 FROM organization_admins oa
+                        WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+                    )
+                    OR ep.user_id = ?  -- Show hidden events if user is participant
+                )
                 ORDER BY e.start_date DESC
-            `, [userId, userId, userId], (err, rows) => {
+            `, [userId, userId, userId, userId, userId], (err, rows) => {
                 if (err) reject(err);
                 resolve(rows);
             });
