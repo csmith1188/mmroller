@@ -50,7 +50,8 @@ router.get('/events/:id', async (req, res) => {
                 SELECT e.*, o.name as organization_name, o.id as organization_id,
                        CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant,
                        CASE WHEN oa.user_id IS NOT NULL THEN 1 ELSE 0 END as is_admin,
-                       CASE WHEN om.user_id IS NOT NULL THEN 1 ELSE 0 END as is_org_member
+                       CASE WHEN om.user_id IS NOT NULL THEN 1 ELSE 0 END as is_org_member,
+                       CASE WHEN ep.is_organizer = 1 THEN 1 ELSE 0 END as is_organizer
                 FROM events e
                 JOIN organizations o ON e.organization_id = o.id
                 LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
@@ -79,13 +80,19 @@ router.get('/events/:id', async (req, res) => {
         const participants = await new Promise((resolve, reject) => {
             db.all(`
                 SELECT u.id, u.username as display_name,
-                       CASE WHEN oa.user_id IS NOT NULL THEN 1 ELSE 0 END as is_admin
-                FROM users u
-                JOIN event_participants ep ON u.id = ep.user_id
-                LEFT JOIN organization_admins oa ON oa.organization_id = ? AND oa.user_id = u.id
+                       pes.mmr, pes.matches_played, pes.wins, pes.losses,
+                       CASE WHEN ep.is_organizer = 1 THEN 1 ELSE 0 END as is_organizer,
+                       CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
+                       CASE WHEN eb.user_id IS NOT NULL AND eb.status = 'active' THEN 1 ELSE 0 END as is_banned
+                FROM event_participants ep
+                JOIN users u ON ep.user_id = u.id
+                JOIN events e ON ep.event_id = e.id
+                JOIN organizations o ON e.organization_id = o.id
+                LEFT JOIN player_event_stats pes ON e.id = pes.event_id AND pes.user_id = u.id
+                LEFT JOIN event_bans eb ON e.id = eb.event_id AND eb.user_id = u.id
                 WHERE ep.event_id = ?
                 ORDER BY u.username
-            `, [event.organization_id, eventId], (err, rows) => {
+            `, [eventId], (err, rows) => {
                 if (err) reject(err);
                 resolve(rows);
             });
@@ -1053,29 +1060,27 @@ router.get('/organization/:id', async (req, res) => {
 
 // Update event details
 router.post('/events/:id/update', async (req, res) => {
-    const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
     const { name, description, visibility } = req.body;
     const userId = req.session.userId;
 
     try {
-        // Check if user is an admin
-        const event = await new Promise((resolve, reject) => {
+        // Check if user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT e.*, CASE WHEN oa.user_id IS NOT NULL THEN 1 ELSE 0 END as is_admin
-                FROM events e
-                JOIN organizations o ON e.organization_id = o.id
-                LEFT JOIN organization_admins oa ON o.id = oa.organization_id AND oa.user_id = ?
-                WHERE e.id = ?
-            `, [userId, eventId], (err, row) => {
+                SELECT 1 FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [userId, userId, eventId], (err, row) => {
                 if (err) reject(err);
-                resolve(row);
+                resolve(!!row);
             });
         });
 
-        if (!event || !event.is_admin) {
-            return res.status(403).render('error', { message: 'Unauthorized: You must be an admin to update the event' });
+        if (!isAuthorized) {
+            return res.status(403).render('error', { message: 'Unauthorized: Only event organizers and organization admins can update events' });
         }
 
         // Validate visibility value
@@ -1112,20 +1117,21 @@ router.post('/events/:id/custom-fields', async (req, res) => {
     const fieldIds = req.body.field_ids || [];
 
     try {
-        // Check if user is admin
-        const isAdmin = await new Promise((resolve, reject) => {
+        // Check if user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
             db.get(`
                 SELECT 1 FROM events e
-                JOIN organization_admins oa ON e.organization_id = oa.organization_id
-                WHERE e.id = ? AND oa.user_id = ?
-            `, [eventId, userId], (err, row) => {
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [userId, userId, eventId], (err, row) => {
                 if (err) reject(err);
                 resolve(!!row);
             });
         });
 
-        if (!isAdmin) {
-            return res.status(403).send('Unauthorized: Only organization admins can manage custom fields');
+        if (!isAuthorized) {
+            return res.status(403).render('error', { message: 'Unauthorized: Only event organizers and organization admins can update custom fields' });
         }
 
         // Get existing field IDs
@@ -1217,19 +1223,20 @@ router.post('/events/:id/custom-fields/:fieldId', async (req, res) => {
     const { field_name, field_description, is_private, is_required } = req.body;
 
     try {
-        // Check if user is admin
-        const isAdmin = await new Promise((resolve, reject) => {
+        // Check if user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT 1 FROM organization_admins oa
-                JOIN events e ON e.organization_id = oa.organization_id
-                WHERE e.id = ? AND oa.user_id = ?
-            `, [eventId, req.session.userId], (err, row) => {
+                SELECT 1 FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [req.session.userId, req.session.userId, eventId], (err, row) => {
                 if (err) reject(err);
                 resolve(!!row);
             });
         });
 
-        if (!isAdmin) {
+        if (!isAuthorized) {
             return res.status(403).json({ error: 'Unauthorized' });
         }
 
@@ -1257,19 +1264,20 @@ router.post('/events/:id/custom-fields/:fieldId/delete', async (req, res) => {
     const { id: eventId, fieldId } = req.params;
 
     try {
-        // Check if user is admin
-        const isAdmin = await new Promise((resolve, reject) => {
+        // Check if user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT 1 FROM organization_admins oa
-                JOIN events e ON e.organization_id = oa.organization_id
-                WHERE e.id = ? AND oa.user_id = ?
-            `, [eventId, req.session.userId], (err, row) => {
+                SELECT 1 FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [req.session.userId, req.session.userId, eventId], (err, row) => {
                 if (err) reject(err);
                 resolve(!!row);
             });
         });
 
-        if (!isAdmin) {
+        if (!isAuthorized) {
             return res.status(403).json({ error: 'Unauthorized' });
         }
 
@@ -1299,19 +1307,20 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
         const participant = await new Promise((resolve, reject) => {
             const query = `
                 SELECT u.id as user_id, u.username as display_name, u.created_at,
-                       pes.mmr, pes.matches_played, pes.wins,
-                       CASE WHEN EXISTS (
-                           SELECT 1 FROM organization_admins oa
-                           JOIN events e ON e.organization_id = oa.organization_id
-                           WHERE e.id = ? AND oa.user_id = ?
-                       ) THEN 1 ELSE 0 END as is_admin
-                FROM users u
-                JOIN event_participants ep ON u.id = ep.user_id
-                LEFT JOIN player_event_stats pes ON pes.event_id = ep.event_id AND pes.user_id = u.id
+                       pes.mmr, pes.matches_played, pes.wins, pes.losses,
+                       CASE WHEN ep.is_organizer = 1 THEN 1 ELSE 0 END as is_organizer,
+                       CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
+                       CASE WHEN eb.user_id IS NOT NULL AND eb.status = 'active' THEN 1 ELSE 0 END as is_banned
+                FROM event_participants ep
+                JOIN users u ON ep.user_id = u.id
+                JOIN events e ON ep.event_id = e.id
+                JOIN organizations o ON e.organization_id = o.id
+                LEFT JOIN player_event_stats pes ON e.id = pes.event_id AND pes.user_id = u.id
+                LEFT JOIN event_bans eb ON e.id = eb.event_id AND eb.user_id = u.id
                 WHERE u.id = ? AND ep.event_id = ?
             `;
             
-            db.get(query, [eventId, currentUserId, userId, eventId], (err, row) => {
+            db.get(query, [currentUserId, eventId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });
@@ -1407,7 +1416,7 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
             db.all(query, [
                 userId,
                 eventId,
-                participant.is_admin,
+                participant.is_organizer,
                 isViewingOwnProfile
             ], (err, rows) => {
                 if (err) reject(err);
@@ -1431,7 +1440,7 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
             isViewingOwnProfile,
             eventId,
             userId,
-            isAdmin: participant.is_admin,
+            isAdmin: participant.is_organizer,
             messages
         };
         res.render('participant', templateData);
@@ -1587,20 +1596,21 @@ router.post('/events/:id/match-fields', async (req, res) => {
     const fieldIds = req.body.field_ids || [];
 
     try {
-        // Check if user is admin
-        const isAdmin = await new Promise((resolve, reject) => {
+        // Check if user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
             db.get(`
                 SELECT 1 FROM events e
-                JOIN organization_admins oa ON e.organization_id = oa.organization_id
-                WHERE e.id = ? AND oa.user_id = ?
-            `, [eventId, userId], (err, row) => {
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [userId, userId, eventId], (err, row) => {
                 if (err) reject(err);
                 resolve(!!row);
             });
         });
 
-        if (!isAdmin) {
-            return res.status(403).send('Unauthorized: Only organization admins can manage custom fields');
+        if (!isAuthorized) {
+            return res.status(403).send('Unauthorized: Only event organizers and organization admins can manage custom fields');
         }
 
         // Get existing field IDs
@@ -1691,19 +1701,20 @@ router.post('/events/:id/match-fields/:fieldId/delete', async (req, res) => {
     const { id: eventId, fieldId } = req.params;
 
     try {
-        // Check if user is admin
-        const isAdmin = await new Promise((resolve, reject) => {
+        // Check if user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT 1 FROM organization_admins oa
-                JOIN events e ON e.organization_id = oa.organization_id
-                WHERE e.id = ? AND oa.user_id = ?
-            `, [eventId, req.session.userId], (err, row) => {
+                SELECT 1 FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [req.session.userId, req.session.userId, eventId], (err, row) => {
                 if (err) reject(err);
                 resolve(!!row);
             });
         });
 
-        if (!isAdmin) {
+        if (!isAuthorized) {
             return res.status(403).json({ error: 'Unauthorized' });
         }
 
@@ -1831,29 +1842,27 @@ router.post('/events/:id/join', async (req, res) => {
 
 // Update event dates
 router.post('/events/:id/update-dates', async (req, res) => {
-    const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
     const { start_date, end_date } = req.body;
     const userId = req.session.userId;
 
     try {
-        // Check if user is an admin
-        const event = await new Promise((resolve, reject) => {
+        // Check if user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT e.*, CASE WHEN oa.user_id IS NOT NULL THEN 1 ELSE 0 END as is_admin
-                FROM events e
-                JOIN organizations o ON e.organization_id = o.id
-                LEFT JOIN organization_admins oa ON o.id = oa.organization_id AND oa.user_id = ?
-                WHERE e.id = ?
-            `, [userId, eventId], (err, row) => {
+                SELECT 1 FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [userId, userId, eventId], (err, row) => {
                 if (err) reject(err);
-                resolve(row);
+                resolve(!!row);
             });
         });
 
-        if (!event || !event.is_admin) {
-            return res.status(403).render('error', { message: 'Unauthorized: You must be an admin to update event dates' });
+        if (!isAuthorized) {
+            return res.status(403).render('error', { message: 'Unauthorized: Only event organizers and organization admins can update event dates' });
         }
 
         // Validate dates
@@ -1893,6 +1902,94 @@ router.post('/events/:id/update-dates', async (req, res) => {
     } catch (error) {
         console.error('Error updating event dates:', error);
         return res.status(500).render('error', { message: 'Error updating event dates' });
+    }
+});
+
+// Promote participant to event organizer
+router.post('/events/:id/promote/:userId', async (req, res) => {
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.params.userId;
+    const currentUserId = req.session.userId;
+
+    try {
+        // Check if current user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [currentUserId, currentUserId, eventId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAuthorized) {
+            return res.status(403).render('error', { message: 'Unauthorized: Only event organizers and organization admins can promote participants' });
+        }
+
+        // Update participant to organizer
+        await new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE event_participants SET is_organizer = 1 WHERE event_id = ? AND user_id = ?',
+                [eventId, userId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.redirect(`/events/${eventId}`);
+    } catch (error) {
+        console.error('Error promoting participant:', error);
+        res.status(500).render('error', { message: 'Error promoting participant' });
+    }
+});
+
+// Demote event organizer
+router.post('/events/:id/demote/:userId', async (req, res) => {
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const userId = req.params.userId;
+    const currentUserId = req.session.userId;
+
+    try {
+        // Check if current user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT 1 FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [currentUserId, currentUserId, eventId], (err, row) => {
+                if (err) reject(err);
+                resolve(!!row);
+            });
+        });
+
+        if (!isAuthorized) {
+            return res.status(403).render('error', { message: 'Unauthorized: Only event organizers and organization admins can demote participants' });
+        }
+
+        // Update organizer to regular participant
+        await new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE event_participants SET is_organizer = 0 WHERE event_id = ? AND user_id = ?',
+                [eventId, userId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.redirect(`/events/${eventId}`);
+    } catch (error) {
+        console.error('Error demoting participant:', error);
+        res.status(500).render('error', { message: 'Error demoting participant' });
     }
 });
 

@@ -212,11 +212,14 @@ router.get('/matches/:id', (req, res) => {
                CASE WHEN EXISTS (
                    SELECT 1 FROM organization_admins oa
                    WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+               ) OR EXISTS (
+                   SELECT 1 FROM event_participants ep
+                   WHERE ep.event_id = e.id AND ep.user_id = ? AND ep.is_organizer = 1
                ) THEN 1 ELSE 0 END as is_admin
         FROM matches m
         JOIN events e ON m.event_id = e.id
         WHERE m.id = ?
-    `, [userId, matchId], (err, match) => {
+    `, [userId, userId, matchId], (err, match) => {
         if (err) {
             console.error('Error fetching match:', err);
             return res.status(500).render('error', { message: 'Error fetching match details' });
@@ -376,7 +379,7 @@ router.post('/matches/:id/scores', (req, res) => {
     const userId = req.session.userId;
     const scores = req.body.scores;
     
-    // Check if user is a player in the match or an admin
+    // Check if user is a player in the match or an admin/organizer
     db.get(`
         SELECT 
             CASE WHEN EXISTS (
@@ -387,15 +390,19 @@ router.post('/matches/:id/scores', (req, res) => {
                 JOIN events e ON e.organization_id = oa.organization_id
                 JOIN matches m ON m.event_id = e.id
                 WHERE m.id = ? AND oa.user_id = ?
+            ) OR EXISTS (
+                SELECT 1 FROM event_participants ep
+                JOIN matches m ON m.event_id = ep.event_id
+                WHERE m.id = ? AND ep.user_id = ? AND ep.is_organizer = 1
             ) THEN 1 ELSE 0 END as is_admin
-    `, [matchId, userId, matchId, userId], (err, result) => {
+    `, [matchId, userId, matchId, userId, matchId, userId], (err, result) => {
         if (err) {
             console.error(err);
             return res.status(500).render('error', { message: 'Error checking user permissions' });
         }
         
         if (!result.is_player && !result.is_admin) {
-            return res.status(403).render('error', { message: 'Only players in the match or organization admins can submit scores' });
+            return res.status(403).render('error', { message: 'Only players in the match or event organizers/admins can submit scores' });
         }
         
         // Start transaction
@@ -529,18 +536,23 @@ router.post('/matches/:id/status', (req, res) => {
     const userId = req.session.userId;
     const status = req.body.status;
     
-    // Verify user is admin and get match details
+    // Verify user is admin/organizer and get match details
     db.get(`
         SELECT m.*, e.id as event_id, e.organization_id
         FROM matches m
         JOIN events e ON m.event_id = e.id
-        WHERE m.id = ? AND EXISTS (
-            SELECT 1 FROM organization_admins oa
-            WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+        WHERE m.id = ? AND (
+            EXISTS (
+                SELECT 1 FROM organization_admins oa
+                WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+            ) OR EXISTS (
+                SELECT 1 FROM event_participants ep
+                WHERE ep.event_id = e.id AND ep.user_id = ? AND ep.is_organizer = 1
+            )
         )
-    `, [matchId, userId], async (err, match) => {
+    `, [matchId, userId, userId], async (err, match) => {
         if (err || !match) {
-            return res.status(403).render('error', { message: 'Unauthorized' });
+            return res.status(403).render('error', { message: 'Unauthorized: Only event organizers and organization admins can update match status' });
         }
 
         db.run('BEGIN TRANSACTION', async (err) => {
@@ -605,18 +617,23 @@ router.post('/matches/:id/finalize', (req, res) => {
     const userId = req.session.userId;
     const submissionId = req.body.submission_id;
     
-    // Verify user is admin
+    // Verify user is admin or event organizer
     db.get(`
         SELECT m.*, e.id as event_id, e.organization_id
         FROM matches m
         JOIN events e ON m.event_id = e.id
-        WHERE m.id = ? AND EXISTS (
-            SELECT 1 FROM organization_admins oa
-            WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+        WHERE m.id = ? AND (
+            EXISTS (
+                SELECT 1 FROM organization_admins oa
+                WHERE oa.organization_id = e.organization_id AND oa.user_id = ?
+            ) OR EXISTS (
+                SELECT 1 FROM event_participants ep
+                WHERE ep.event_id = e.id AND ep.user_id = ? AND ep.is_organizer = 1
+            )
         )
-    `, [matchId, userId], async (err, match) => {
+    `, [matchId, userId, userId], async (err, match) => {
         if (err || !match) {
-            return res.status(403).render('error', { message: 'Unauthorized' });
+            return res.status(403).render('error', { message: 'Unauthorized: Only event organizers and organization admins can finalize matches' });
         }
         
         // Start transaction
@@ -778,20 +795,21 @@ router.post('/events/:id/matches', async (req, res) => {
     }
 
     try {
-        // Check if user is admin of the organization
-        const isAdmin = await new Promise((resolve, reject) => {
+        // Check if user is admin or event organizer
+        const isAuthorized = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT 1 FROM organization_admins oa
-                JOIN events e ON e.organization_id = oa.organization_id
-                WHERE e.id = ? AND oa.user_id = ?
-            `, [eventId, userId], (err, row) => {
+                SELECT 1 FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                LEFT JOIN organization_admins oa ON e.organization_id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ? AND (ep.is_organizer = 1 OR oa.user_id IS NOT NULL)
+            `, [userId, userId, eventId], (err, row) => {
                 if (err) reject(err);
                 resolve(!!row);
             });
         });
 
-        if (!isAdmin) {
-            return res.status(403).render('error', { message: 'Unauthorized: You must be an admin to create matches' });
+        if (!isAuthorized) {
+            return res.status(403).render('error', { message: 'Unauthorized: You must be an event organizer or organization admin to create matches' });
         }
 
         // Verify players are event participants
@@ -932,7 +950,7 @@ router.post('/matches/:id/custom-responses', (req, res) => {
         return res.status(400).render('error', { message: 'Invalid responses format' });
     }
     
-    // Check if user is a player in the match or an admin
+    // Check if user is a player in the match or an admin/organizer
     db.get(`
         SELECT 
             CASE WHEN EXISTS (
@@ -943,15 +961,19 @@ router.post('/matches/:id/custom-responses', (req, res) => {
                 JOIN events e ON e.organization_id = oa.organization_id
                 JOIN matches m ON m.event_id = e.id
                 WHERE m.id = ? AND oa.user_id = ?
+            ) OR EXISTS (
+                SELECT 1 FROM event_participants ep
+                JOIN matches m ON m.event_id = ep.event_id
+                WHERE m.id = ? AND ep.user_id = ? AND ep.is_organizer = 1
             ) THEN 1 ELSE 0 END as is_admin
-    `, [matchId, userId, matchId, userId], (err, result) => {
+    `, [matchId, userId, matchId, userId, matchId, userId], (err, result) => {
         if (err) {
             console.error('Error checking user permissions:', err);
             return res.status(500).render('error', { message: 'Error checking permissions' });
         }
         
         if (!result.is_player && !result.is_admin) {
-            return res.status(403).render('error', { message: 'Unauthorized: You must be a player or admin to submit responses' });
+            return res.status(403).render('error', { message: 'Unauthorized: You must be a player or event organizer/admin to submit responses' });
         }
         
         // Start transaction

@@ -11,7 +11,7 @@
                     <p class="text-muted">
                         Organization: <a href="/organizations/<%= event.organization_id %>"><%= event.organization_name %></a>
                     </p>
-                    <% if (event.is_admin) { %>
+                    <% if (event.is_admin || event.is_organizer) { %>
                         <form action="/events/<%= event.id %>/update" method="POST" class="mb-4">
                             <div class="mb-3">
                                 <label for="name" class="form-label">Event Name</label>
@@ -21,7 +21,7 @@
                                 <label for="description" class="form-label">Description</label>
                                 <textarea class="form-control" id="description" name="description" rows="3"><%= event.description || '' %></textarea>
                             </div>
-                            <% if (event.is_admin) { %>
+                            <% if (event.is_admin || event.is_organizer) { %>
                                 <div class="mb-3">
                                     <label class="form-label">Event Visibility</label>
                                     <div class="btn-group w-100" role="group">
@@ -65,7 +65,7 @@
                         <% } %>
                     <% } %>
                     
-                    <% if (event.is_admin) { %>
+                    <% if (event.is_admin || event.is_organizer) { %>
                         <div class="card mt-4">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <h5 class="mb-0">Participant Custom Details</h5>
@@ -134,21 +134,18 @@
                                     <th>Player</th>
                                     <th class="text-end">MMR</th>
                                     <th class="text-end">W/M</th>
-                                    <% if (event.is_admin) { %>
-                                        <th class="text-end">Actions</th>
-                                    <% } %>
                                 </tr>
                             </thead>
                             <tbody>
                                 <% participants.forEach(participant => { %>
-                                    <tr>
+                                    <tr class="participant-row" data-participant-id="<%= participant.id %>">
                                         <td>
                                             <a href="/events/<%= event.id %>/participants/<%= participant.id %>" class="text-decoration-none">
                                                 <%= participant.display_name %>
                                             </a>
                                         </td>
                                         <td class="text-end">
-                                            <% if (event.is_admin) { %>
+                                            <% if (event.is_admin || event.is_organizer) { %>
                                                 <button type="button" 
                                                         class="btn btn-link p-0 text-decoration-none" 
                                                         data-bs-toggle="modal" 
@@ -164,135 +161,206 @@
                                             /
                                             <span><%= participant.matches_played || 0 %></span>
                                         </td>
-                                        <% if (event.is_admin) { %>
-                                            <td class="text-end">
-                                                <% if (!participant.is_creator) { %>
-                                                    <div class="dropdown">
-                                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                                            Actions
-                                                        </button>
-                                                        <ul class="dropdown-menu dropdown-menu-end">
-                                                            <% if (participant.is_banned) { %>
-                                                                <li>
-                                                                    <button type="button" class="dropdown-item text-success" data-bs-toggle="modal" data-bs-target="#unbanModal<%= participant.id %>">
-                                                                        Unban
-                                                                    </button>
-                                                                </li>
-                                                            <% } else { %>
-                                                                <li>
-                                                                    <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#kickModal<%= participant.id %>">
-                                                                        Kick
-                                                                    </button>
-                                                                </li>
-                                                                <li>
-                                                                    <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#banModal<%= participant.id %>">
-                                                                        Ban
-                                                                    </button>
-                                                                </li>
-                                                            <% } %>
-                                                        </ul>
-                                                    </div>
-
-                                                    <!-- Edit MMR Modal -->
-                                                    <div class="modal fade" id="editMMRModal<%= participant.id %>" tabindex="-1">
-                                                        <div class="modal-dialog">
-                                                            <div class="modal-content">
-                                                                <div class="modal-header">
-                                                                    <h5 class="modal-title">Edit MMR for <%= participant.display_name %></h5>
-                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                                </div>
-                                                                <div class="modal-body">
-                                                                    <form action="/events/<%= event.id %>/participants/<%= participant.id %>/mmr" method="POST">
-                                                                        <div class="mb-3">
-                                                                            <label for="mmr" class="form-label">New MMR</label>
-                                                                            <input type="number" class="form-control" id="mmr" name="mmr" value="<%= participant.mmr %>" required>
-                                                                        </div>
-                                                                        <div class="text-end">
-                                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                                            <button type="submit" class="btn btn-primary">Update MMR</button>
-                                                                        </div>
-                                                                    </form>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <!-- Unban Modal -->
-                                                    <div class="modal fade" id="unbanModal<%= participant.id %>" tabindex="-1">
-                                                        <div class="modal-dialog">
-                                                            <div class="modal-content">
-                                                                <div class="modal-header">
-                                                                    <h5 class="modal-title">Unban Participant</h5>
-                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                                </div>
-                                                                <div class="modal-body">
-                                                                    <p>Are you sure you want to unban <strong><%= participant.display_name %></strong> from this event?</p>
-                                                                    <p>They will be able to rejoin the event.</p>
-                                                                </div>
-                                                                <div class="modal-footer">
-                                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                                    <form action="/events/<%= event.id %>/unban/<%= participant.id %>" method="POST">
-                                                                        <button type="submit" class="btn btn-success">Unban</button>
-                                                                    </form>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <!-- Kick Modal -->
-                                                    <div class="modal fade" id="kickModal<%= participant.id %>" tabindex="-1">
-                                                        <div class="modal-dialog">
-                                                            <div class="modal-content">
-                                                                <div class="modal-header">
-                                                                    <h5 class="modal-title">Kick Participant</h5>
-                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                                </div>
-                                                                <div class="modal-body">
-                                                                    <p>Are you sure you want to kick <strong><%= participant.display_name %></strong> from this event?</p>
-                                                                    <p class="text-danger">This will remove them from the event and mark their matches as forfeit.</p>
-                                                                </div>
-                                                                <div class="modal-footer">
-                                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                                    <form action="/events/<%= event.id %>/kick/<%= participant.id %>" method="POST">
-                                                                        <button type="submit" class="btn btn-danger">Kick</button>
-                                                                    </form>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-
-                                                    <!-- Ban Modal -->
-                                                    <div class="modal fade" id="banModal<%= participant.id %>" tabindex="-1">
-                                                        <div class="modal-dialog">
-                                                            <div class="modal-content">
-                                                                <div class="modal-header">
-                                                                    <h5 class="modal-title">Ban Participant</h5>
-                                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                                </div>
-                                                                <div class="modal-body">
-                                                                    <p>Are you sure you want to ban <strong><%= participant.display_name %></strong> from this event?</p>
-                                                                    <p class="text-danger">This will kick them from the event and prevent them from rejoining.</p>
-                                                                </div>
-                                                                <div class="modal-footer">
-                                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                                    <form action="/events/<%= event.id %>/ban/<%= participant.id %>" method="POST">
-                                                                        <button type="submit" class="btn btn-danger">Ban</button>
-                                                                    </form>
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                <% } %>
-                                            </td>
-                                        <% } %>
                                     </tr>
+                                    <% if (event.is_admin || event.is_organizer && !participant.is_creator) { %>
+                                        <tr class="participant-actions d-none" data-participant-id="<%= participant.id %>">
+                                            <td colspan="3" class="bg-light">
+                                                <div class="d-flex justify-content-end gap-2">
+                                                    <% if (participant.is_banned) { %>
+                                                        <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#unbanModal<%= participant.id %>">
+                                                            Unban
+                                                        </button>
+                                                    <% } else { %>
+                                                        <button type="button" class="btn btn-sm btn-danger" data-bs-toggle="modal" data-bs-target="#banModal<%= participant.id %>">
+                                                            Ban
+                                                        </button>
+                                                        <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#kickModal<%= participant.id %>">
+                                                            Kick
+                                                        </button>
+                                                    <% } %>
+                                                    <% if (!participant.is_organizer) { %>
+                                                        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#promoteModal<%= participant.id %>">
+                                                            Promote to Organizer
+                                                        </button>
+                                                    <% } else { %>
+                                                        <button type="button" class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#demoteModal<%= participant.id %>">
+                                                            Demote from Organizer
+                                                        </button>
+                                                    <% } %>
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        <!-- Edit MMR Modal -->
+                                        <div class="modal fade" id="editMMRModal<%= participant.id %>" tabindex="-1">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title">Edit MMR for <%= participant.display_name %></h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <form action="/events/<%= event.id %>/participants/<%= participant.id %>/mmr" method="POST">
+                                                            <div class="mb-3">
+                                                                <label for="mmr" class="form-label">New MMR</label>
+                                                                <input type="number" class="form-control" id="mmr" name="mmr" value="<%= participant.mmr %>" required>
+                                                            </div>
+                                                            <div class="text-end">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <button type="submit" class="btn btn-primary">Update MMR</button>
+                                                            </div>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Unban Modal -->
+                                        <div class="modal fade" id="unbanModal<%= participant.id %>" tabindex="-1">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title">Unban Participant</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <p>Are you sure you want to unban <strong><%= participant.display_name %></strong> from this event?</p>
+                                                        <p>They will be able to rejoin the event.</p>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <form action="/events/<%= event.id %>/unban/<%= participant.id %>" method="POST">
+                                                            <button type="submit" class="btn btn-success">Unban</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Promote Modal -->
+                                        <div class="modal fade" id="promoteModal<%= participant.id %>" tabindex="-1">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title">Promote to Event Organizer</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <p>Are you sure you want to promote <strong><%= participant.display_name %></strong> to Event Organizer?</p>
+                                                        <p>They will have full admin access to this event.</p>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <form action="/events/<%= event.id %>/promote/<%= participant.id %>" method="POST">
+                                                            <button type="submit" class="btn btn-primary">Promote</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Demote Modal -->
+                                        <div class="modal fade" id="demoteModal<%= participant.id %>" tabindex="-1">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title">Demote from Event Organizer</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <p>Are you sure you want to demote <strong><%= participant.display_name %></strong> from Event Organizer?</p>
+                                                        <p>They will lose admin access to this event.</p>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <form action="/events/<%= event.id %>/demote/<%= participant.id %>" method="POST">
+                                                            <button type="submit" class="btn btn-warning">Demote</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Kick Modal -->
+                                        <div class="modal fade" id="kickModal<%= participant.id %>" tabindex="-1">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title">Kick Participant</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <p>Are you sure you want to kick <strong><%= participant.display_name %></strong> from this event?</p>
+                                                        <p class="text-danger">This will remove them from the event and mark their matches as forfeit.</p>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <form action="/events/<%= event.id %>/kick/<%= participant.id %>" method="POST">
+                                                            <button type="submit" class="btn btn-danger">Kick</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <!-- Ban Modal -->
+                                        <div class="modal fade" id="banModal<%= participant.id %>" tabindex="-1">
+                                            <div class="modal-dialog">
+                                                <div class="modal-content">
+                                                    <div class="modal-header">
+                                                        <h5 class="modal-title">Ban Participant</h5>
+                                                        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                    </div>
+                                                    <div class="modal-body">
+                                                        <p>Are you sure you want to ban <strong><%= participant.display_name %></strong> from this event?</p>
+                                                        <p class="text-danger">This will kick them from the event and prevent them from rejoining.</p>
+                                                    </div>
+                                                    <div class="modal-footer">
+                                                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                        <form action="/events/<%= event.id %>/ban/<%= participant.id %>" method="POST">
+                                                            <button type="submit" class="btn btn-danger">Ban</button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    <% } %>
                                 <% }); %>
                             </tbody>
                         </table>
                     </div>
+
+                    <style>
+                        .participant-row {
+                            cursor: pointer;
+                        }
+                        .participant-row:hover {
+                            background-color: rgba(0,0,0,.05);
+                        }
+                        .participant-actions {
+                            background-color: rgba(0,0,0,.02);
+                        }
+                    </style>
+
+                    <script>
+                        document.addEventListener('DOMContentLoaded', function() {
+                            const participantRows = document.querySelectorAll('.participant-row');
+                            
+                            participantRows.forEach(row => {
+                                row.addEventListener('click', function() {
+                                    const participantId = this.dataset.participantId;
+                                    const actionsRow = document.querySelector(`.participant-actions[data-participant-id="${participantId}"]`);
+                                    
+                                    if (actionsRow) {
+                                        actionsRow.classList.toggle('d-none');
+                                    }
+                                });
+                            });
+                        });
+                    </script>
                     
                     <h5 class="mt-4">Matches</h5>
-                    <% if (event.is_admin) { %>
+                    <% if (event.is_admin || event.is_organizer) { %>
                         <div class="card mb-4">
                             <div class="card-header d-flex justify-content-between align-items-center">
                                 <h5 class="mb-0">Match Custom Fields</h5>
@@ -353,7 +421,7 @@
                         </div>
                     <% } %>
                     
-                    <% if (event.is_admin) { %>
+                    <% if (event.is_admin || event.is_organizer) { %>
                         <div class="d-grid gap-2">
                             <a href="/events/<%= event.id %>/matches/new" class="btn btn-primary">Create New Match</a>
                         </div>
@@ -390,7 +458,7 @@
                     <h5 class="mb-0">Event Details</h5>
                 </div>
                 <div class="card-body">
-                    <% if (event.is_admin) { %>
+                    <% if (event.is_admin || event.is_organizer) { %>
                         <form action="/events/<%= event.id %>/update-dates" method="POST" class="mb-3">
                             <div class="mb-3">
                                 <label for="start_date" class="form-label">Start Date</label>
@@ -415,7 +483,7 @@
                         <span><%= event.end_date ? new Date(event.end_date).toLocaleString() : 'Not set' %></span>
                     </div>
                     
-                    <% if (event.is_admin) { %>
+                    <% if (event.is_admin || event.is_organizer) { %>
                         <div class="mb-3">
                             <div class="mb-2">
                                 <strong>Scoring System:</strong>
@@ -468,7 +536,7 @@
                 </div>
             </div>
 
-            <% if (event.is_admin && applications.length > 0) { %>
+            <% if ((event.is_admin || event.is_organizer) && applications.length > 0) { %>
                 <div class="card mb-4 mt-4">
                     <div class="card-header">
                         <h5 class="mb-0">Applications</h5>
