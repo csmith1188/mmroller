@@ -217,7 +217,7 @@ router.get('/events/:id', async (req, res) => {
         res.render('event', {
             event: {
                 ...event,
-                description: formatDescriptionNoTruncate(event.description)
+                description: event.is_admin ? formatDescriptionNoTruncate(event.description) : formatDescription(event.description)
             },
             participants,
             matches,
