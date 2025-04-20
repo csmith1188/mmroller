@@ -96,56 +96,90 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
     }, async (accessToken, refreshToken, profile, done) => {
         try {
             const db = app.locals.db;
+            console.log('Processing Discord profile:', profile);
             
-            // Create username with discriminator
-            const username = profile.username;
-            
-            // Check if user exists
-            db.get('SELECT * FROM users WHERE discord_id = ?', [profile.id], (err, user) => {
-                if (err) {
-                    console.error('Database error:', err);
-                    return done(err);
-                }
-                
-                if (user) {
-                    console.log('Existing user found:', user);
-                    // Update user's Discord info
+            // First check by Discord ID
+            const existingDiscordUser = await new Promise((resolve, reject) => {
+                db.get('SELECT * FROM users WHERE discord_id = ?', [profile.id], (err, row) => {
+                    if (err) {
+                        console.error('Error checking for Discord user:', err);
+                        reject(err);
+                    }
+                    resolve(row);
+                });
+            });
+
+            if (existingDiscordUser) {
+                console.log('Found existing user by Discord ID:', existingDiscordUser);
+                // Update user's info
+                await new Promise((resolve, reject) => {
                     db.run(`
                         UPDATE users 
                         SET username = ?, email = ?, avatar = ?, updated_at = datetime('now')
                         WHERE discord_id = ?
-                    `, [username, profile.email, profile.avatar, profile.id], (err) => {
+                    `, [profile.username, profile.email, profile.avatar, profile.id], (err) => {
                         if (err) {
-                            console.error('Update error:', err);
-                            return done(err);
+                            console.error('Error updating Discord user:', err);
+                            reject(err);
                         }
-                        return done(null, user);
+                        resolve();
                     });
-                } else {
-                    console.log('Creating new user');
-                    // Create new user
-                    db.run(`
-                        INSERT INTO users (username, email, discord_id, avatar, verified, created_at)
-                        VALUES (?, ?, ?, ?, 1, datetime('now'))
-                    `, [username, profile.email, profile.id, profile.avatar], function(err) {
-                        if (err) {
-                            console.error('Insert error:', err);
-                            return done(err);
-                        }
-                        
-                        const newUser = {
-                            id: this.lastID,
-                            username: username,
-                            email: profile.email,
-                            discord_id: profile.id,
-                            avatar: profile.avatar
-                        };
-                        
-                        console.log('New user created:', newUser);
-                        return done(null, newUser);
-                    });
-                }
+                });
+                return done(null, existingDiscordUser);
+            }
+
+            // If no Discord user found, check by email
+            const existingEmailUser = await new Promise((resolve, reject) => {
+                db.get('SELECT * FROM users WHERE email = ?', [profile.email], (err, row) => {
+                    if (err) {
+                        console.error('Error checking for email user:', err);
+                        reject(err);
+                    }
+                    resolve(row);
+                });
             });
+
+            if (existingEmailUser) {
+                console.log('Found existing user by email:', existingEmailUser);
+                // Update existing user with Discord info
+                await new Promise((resolve, reject) => {
+                    db.run(`
+                        UPDATE users 
+                        SET discord_id = ?, username = ?, avatar = ?, updated_at = datetime('now')
+                        WHERE email = ?
+                    `, [profile.id, profile.username, profile.avatar, profile.email], (err) => {
+                        if (err) {
+                            console.error('Error updating email user:', err);
+                            reject(err);
+                        }
+                        resolve();
+                    });
+                });
+                return done(null, existingEmailUser);
+            }
+
+            // If no user found at all, create new one
+            console.log('Creating new user for Discord profile:', profile);
+            const newUser = await new Promise((resolve, reject) => {
+                db.run(`
+                    INSERT INTO users (username, email, discord_id, avatar, verified, created_at)
+                    VALUES (?, ?, ?, ?, 1, datetime('now'))
+                `, [profile.username, profile.email, profile.id, profile.avatar], function(err) {
+                    if (err) {
+                        console.error('Error creating new user:', err);
+                        reject(err);
+                    }
+                    resolve({
+                        id: this.lastID,
+                        username: profile.username,
+                        email: profile.email,
+                        discord_id: profile.id,
+                        avatar: profile.avatar
+                    });
+                });
+            });
+            console.log('Created new user:', newUser);
+            return done(null, newUser);
         } catch (err) {
             console.error('Strategy error:', err);
             return done(err);

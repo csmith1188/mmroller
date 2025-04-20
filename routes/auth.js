@@ -129,55 +129,11 @@ router.get('/discord', passport.authenticate('discord'));
 router.get('/discord/callback', 
     passport.authenticate('discord', { failureRedirect: '/login' }),
     async (req, res) => {
-        const db = req.app.locals.db;
-        const discordUser = req.user;
-        
-        try {
-            // Check if user with this email already exists
-            const existingUser = await new Promise((resolve, reject) => {
-                db.get('SELECT * FROM users WHERE email = ?', [discordUser.email], (err, row) => {
-                    if (err) reject(err);
-                    resolve(row);
-                });
-            });
-
-            if (existingUser) {
-                // If user exists, update their Discord info
-                await new Promise((resolve, reject) => {
-                    db.run(
-                        'UPDATE users SET discord_id = ?, username = ? WHERE id = ?',
-                        [discordUser.id, discordUser.username, existingUser.id],
-                        (err) => {
-                            if (err) reject(err);
-                            resolve();
-                        }
-                    );
-                });
-                
-                // Set session userId for compatibility
-                req.session.userId = existingUser.id;
-                return res.redirect('/profile');
-            }
-
-            // If no existing user, create new one
-            await new Promise((resolve, reject) => {
-                db.run(
-                    'INSERT INTO users (username, email, discord_id, verified) VALUES (?, ?, ?, 1)',
-                    [discordUser.username, discordUser.email, discordUser.id],
-                    function(err) {
-                        if (err) reject(err);
-                        resolve(this.lastID);
-                    }
-                );
-            });
-
-            // Set session userId for compatibility
-            req.session.userId = discordUser.id;
-            res.redirect('/profile');
-        } catch (error) {
-            console.error('Discord OAuth error:', error);
-            res.status(500).render('error', { message: 'Error processing Discord login' });
-        }
+        // The user is already created/updated by the Passport strategy
+        // Just set the session and redirect
+        req.session.userId = req.user.id;
+        req.session.username = req.user.username;
+        res.redirect('/profile');
     }
 );
 
