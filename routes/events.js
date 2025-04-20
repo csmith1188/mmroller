@@ -1056,7 +1056,7 @@ router.post('/events/:id/update', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const eventId = req.params.id;
-    const { name, description, start_date, end_date, visibility } = req.body;
+    const { name, description, visibility } = req.body;
     const userId = req.session.userId;
 
     try {
@@ -1084,11 +1084,11 @@ router.post('/events/:id/update', async (req, res) => {
             return res.status(400).render('error', { message: 'Invalid visibility value' });
         }
 
-        // Update event
+        // Update event - preserve existing dates if not provided
         await new Promise((resolve, reject) => {
             db.run(
-                'UPDATE events SET name = ?, description = ?, start_date = ?, end_date = ?, visibility = ? WHERE id = ?',
-                [name, description, start_date, end_date, visibility || 'private', eventId],
+                'UPDATE events SET name = ?, description = ?, visibility = ? WHERE id = ?',
+                [name, description, visibility || 'private', eventId],
                 (err) => {
                     if (err) reject(err);
                     resolve();
@@ -1826,6 +1826,73 @@ router.post('/events/:id/join', async (req, res) => {
     } catch (error) {
         console.error('Error joining event:', error);
         return res.status(500).render('error', { message: 'Error joining event' });
+    }
+});
+
+// Update event dates
+router.post('/events/:id/update-dates', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const eventId = req.params.id;
+    const { start_date, end_date } = req.body;
+    const userId = req.session.userId;
+
+    try {
+        // Check if user is an admin
+        const event = await new Promise((resolve, reject) => {
+            db.get(`
+                SELECT e.*, CASE WHEN oa.user_id IS NOT NULL THEN 1 ELSE 0 END as is_admin
+                FROM events e
+                JOIN organizations o ON e.organization_id = o.id
+                LEFT JOIN organization_admins oa ON o.id = oa.organization_id AND oa.user_id = ?
+                WHERE e.id = ?
+            `, [userId, eventId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!event || !event.is_admin) {
+            return res.status(403).render('error', { message: 'Unauthorized: You must be an admin to update event dates' });
+        }
+
+        // Validate dates
+        let startDate, endDate;
+        try {
+            if (!start_date || !end_date) {
+                return res.status(400).render('error', { message: 'Both start and end dates are required' });
+            }
+
+            startDate = new Date(start_date);
+            endDate = new Date(end_date);
+            
+            if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+                return res.status(400).render('error', { message: 'Invalid date format' });
+            }
+            
+            if (startDate >= endDate) {
+                return res.status(400).render('error', { message: 'End date must be after start date' });
+            }
+        } catch (error) {
+            return res.status(400).render('error', { message: 'Invalid date format' });
+        }
+
+        // Update event dates
+        await new Promise((resolve, reject) => {
+            db.run(
+                'UPDATE events SET start_date = ?, end_date = ? WHERE id = ?',
+                [startDate.toISOString(), endDate.toISOString(), eventId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.redirect(`/events/${eventId}`);
+    } catch (error) {
+        console.error('Error updating event dates:', error);
+        return res.status(500).render('error', { message: 'Error updating event dates' });
     }
 });
 

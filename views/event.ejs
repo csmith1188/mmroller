@@ -395,27 +395,25 @@
                             <div class="mb-3">
                                 <label for="start_date" class="form-label">Start Date</label>
                                 <input type="datetime-local" class="form-control" id="start_date" name="start_date" 
-                                    value="<%= event.start_date ? new Date(event.start_date).toISOString().slice(0, 16) : '' %>">
+                                    value="<%= event.start_date ? new Date(event.start_date).toISOString().slice(0, 16) : '' %>" required>
                             </div>
                             <div class="mb-3">
                                 <label for="end_date" class="form-label">End Date</label>
                                 <input type="datetime-local" class="form-control" id="end_date" name="end_date"
-                                    value="<%= event.end_date ? new Date(event.end_date).toISOString().slice(0, 16) : '' %>">
+                                    value="<%= event.end_date ? new Date(event.end_date).toISOString().slice(0, 16) : '' %>" required>
                             </div>
                             <button type="submit" class="btn btn-primary">Update Dates</button>
                         </form>
-                    <% } else { %>
-                        <% if (event.start_date) { %>
-                            <p class="card-text">
-                                Start Date: <%= new Date(event.start_date).toLocaleDateString() %>
-                            </p>
-                        <% } %>
-                        <% if (event.end_date) { %>
-                            <p class="card-text">
-                                End Date: <%= new Date(event.end_date).toLocaleDateString() %>
-                            </p>
-                        <% } %>
                     <% } %>
+                    
+                    <div class="mb-3">
+                        <strong>Start Date:</strong>
+                        <span><%= event.start_date ? new Date(event.start_date).toLocaleString() : 'Not set' %></span>
+                    </div>
+                    <div class="mb-3">
+                        <strong>End Date:</strong>
+                        <span><%= event.end_date ? new Date(event.end_date).toLocaleString() : 'Not set' %></span>
+                    </div>
                     
                     <% if (event.is_admin) { %>
                         <div class="mb-3">

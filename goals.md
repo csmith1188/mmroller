@@ -1,10 +1,10 @@
 - event organizers
 - mobile long text input error
+- invite system
 - What fields can non-players see in a match?
 - auto save results only saves one score
 
 - require admin approval: can't auto-complete match with matching scores
-- invite system
 - icons for actions/discord/etc
 - submission fields are reversed ?? can't replicate
 - custom field logging
