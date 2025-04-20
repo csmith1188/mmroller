@@ -1,17 +1,3 @@
--- First, update usernames with discordnames where username is empty or null
-UPDATE users 
-SET username = discordname 
-WHERE (username IS NULL OR username = '') 
-AND discordname IS NOT NULL 
-AND discordname != '';
-
--- Check if discordname column exists
-CREATE TABLE IF NOT EXISTS temp_check (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    discordname TEXT
-);
-
--- If the above succeeds, discordname column exists
 -- Create a temporary table without the discordname column
 CREATE TABLE IF NOT EXISTS temp_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -47,7 +33,4 @@ FROM users;
 DROP TABLE users;
 
 -- Rename new table to old name
-ALTER TABLE temp_users RENAME TO users;
-
--- Clean up temporary table
-DROP TABLE temp_check; 
+ALTER TABLE temp_users RENAME TO users; 
