@@ -101,14 +101,14 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
             // First check by Discord ID
             const existingDiscordUser = await new Promise((resolve, reject) => {
                 db.get('SELECT * FROM users WHERE discord_id = ?', [profile.id], (err, row) => {
-                    if (err) {
+                if (err) {
                         console.error('Error checking for Discord user:', err);
                         reject(err);
-                    }
+                }
                     resolve(row);
                 });
             });
-
+                
             if (existingDiscordUser) {
                 console.log('Found existing user by Discord ID:', existingDiscordUser);
                 // Update user's info
@@ -126,7 +126,7 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
                     });
                 });
                 return done(null, existingDiscordUser);
-            }
+                        }
 
             // If no Discord user found, check by email
             const existingEmailUser = await new Promise((resolve, reject) => {
@@ -156,8 +156,8 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
                     });
                 });
                 return done(null, existingEmailUser);
-            }
-
+                        }
+                        
             // If no user found at all, create new one
             console.log('Creating new user for Discord profile:', profile);
             const newUser = await new Promise((resolve, reject) => {
@@ -170,11 +170,11 @@ if (process.env.DISCORD_CLIENT_ID && process.env.DISCORD_CLIENT_SECRET) {
                         reject(err);
                     }
                     resolve({
-                        id: this.lastID,
+                            id: this.lastID,
                         username: profile.username,
-                        email: profile.email,
-                        discord_id: profile.id,
-                        avatar: profile.avatar
+                            email: profile.email,
+                            discord_id: profile.id,
+                            avatar: profile.avatar
                     });
                 });
             });

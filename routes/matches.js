@@ -267,21 +267,21 @@ router.get('/matches/:id', (req, res) => {
                         return res.status(500).render('error', { message: 'Error fetching event settings' });
                     }
 
-                    // Process custom fields to organize responses
-                    const processedFields = customFields.map(field => {
-                        const responses = field.responses ? field.responses.split(',') : [];
-                        const responseUserIds = field.response_user_ids ? field.response_user_ids.split(',').map(Number) : [];
-                        const responseUsernames = field.response_usernames ? field.response_usernames.split(',') : [];
-                        
-                        // Create an array of responses with user info
-                        const responseData = responses.map((response, index) => ({
-                            response,
-                            user_id: responseUserIds[index],
-                            username: responseUsernames[index]
-                        }));
+                // Process custom fields to organize responses
+                const processedFields = customFields.map(field => {
+                    const responses = field.responses ? field.responses.split(',') : [];
+                    const responseUserIds = field.response_user_ids ? field.response_user_ids.split(',').map(Number) : [];
+                    const responseUsernames = field.response_usernames ? field.response_usernames.split(',') : [];
+                    
+                    // Create an array of responses with user info
+                    const responseData = responses.map((response, index) => ({
+                        response,
+                        user_id: responseUserIds[index],
+                        username: responseUsernames[index]
+                    }));
 
-                        // Find current user's response if any
-                        const currentUserResponse = responseData.find(r => r.user_id === parseInt(userId));
+                    // Find current user's response if any
+                    const currentUserResponse = responseData.find(r => r.user_id === parseInt(userId));
 
                         // Check if all players have submitted responses
                         const allPlayersResponded = players.every(player => 
@@ -315,51 +315,51 @@ router.get('/matches/:id', (req, res) => {
                             }
                         }
 
-                        return {
-                            ...field,
+                    return {
+                        ...field,
                             responses: filteredResponses,
-                            current_response: currentUserResponse ? currentUserResponse.response : null
-                        };
-                    });
+                        current_response: currentUserResponse ? currentUserResponse.response : null
+                    };
+                });
 
-                    // Get match submissions
-                    db.all(`
-                        SELECT ms.*, u.username as display_name
-                        FROM match_submissions ms
-                        JOIN users u ON ms.user_id = u.id
-                        WHERE ms.match_id = ?
-                        ORDER BY ms.submitted_at DESC
-                    `, [matchId], (err, submissions) => {
-                        if (err) {
-                            console.error('Error fetching submissions:', err);
-                            return res.status(500).render('error', { message: 'Error fetching match submissions' });
-                        }
-                        
-                        // Parse scores for each submission
-                        const parsedSubmissions = submissions.map(sub => ({
-                            ...sub,
-                            scores: JSON.parse(sub.scores)
-                        }));
-                        
-                        // Get current user's submission if any
-                        const currentSubmission = parsedSubmissions.find(sub => sub.user_id === parseInt(userId));
-                        
-                        // Filter submissions based on user role
-                        const visibleSubmissions = match.is_admin === 1 ? parsedSubmissions : [];
-                        
-                        // Add players and user info to match object
-                        const matchWithPlayers = {
-                            ...match,
-                            players: players,
-                            is_player: isPlayer,
-                            current_submission: currentSubmission, // Show current submission if it exists
-                            custom_fields: processedFields // Add processed custom fields to match object
-                        };
-                        
-                        res.render('match', {
-                            match: matchWithPlayers,
-                            submissions: visibleSubmissions,
-                            userId: parseInt(userId)
+                // Get match submissions
+                db.all(`
+                    SELECT ms.*, u.username as display_name
+                    FROM match_submissions ms
+                    JOIN users u ON ms.user_id = u.id
+                    WHERE ms.match_id = ?
+                    ORDER BY ms.submitted_at DESC
+                `, [matchId], (err, submissions) => {
+                    if (err) {
+                        console.error('Error fetching submissions:', err);
+                        return res.status(500).render('error', { message: 'Error fetching match submissions' });
+                    }
+                    
+                    // Parse scores for each submission
+                    const parsedSubmissions = submissions.map(sub => ({
+                        ...sub,
+                        scores: JSON.parse(sub.scores)
+                    }));
+                    
+                    // Get current user's submission if any
+                    const currentSubmission = parsedSubmissions.find(sub => sub.user_id === parseInt(userId));
+                    
+                    // Filter submissions based on user role
+                    const visibleSubmissions = match.is_admin === 1 ? parsedSubmissions : [];
+                    
+                    // Add players and user info to match object
+                    const matchWithPlayers = {
+                        ...match,
+                        players: players,
+                        is_player: isPlayer,
+                        current_submission: currentSubmission, // Show current submission if it exists
+                        custom_fields: processedFields // Add processed custom fields to match object
+                    };
+                    
+                    res.render('match', {
+                        match: matchWithPlayers,
+                        submissions: visibleSubmissions,
+                        userId: parseInt(userId)
                         });
                     });
                 });
