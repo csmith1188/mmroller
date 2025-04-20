@@ -4,85 +4,83 @@ const crypto = require('crypto');
 // Create a transporter using environment variables
 const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT),
+    port: process.env.SMTP_PORT,
     secure: process.env.SMTP_SECURE === 'true',
     auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS
-    },
-    tls: {
-        rejectUnauthorized: false
-    },
-    debug: true
-});
-
-// Verify transporter configuration
-transporter.verify(function(error, success) {
-    if (error) {
-        console.error('SMTP Configuration Error:', error);
-    } else {
-        console.log('SMTP Server is ready to send emails');
     }
 });
 
-// Generate a verification token
-function generateVerificationToken() {
-    return crypto.randomBytes(32).toString('hex');
+/**
+ * Send an email
+ * @param {string} to - Recipient email address
+ * @param {string} subject - Email subject
+ * @param {string} text - Email body in plain text
+ * @param {string} html - Email body in HTML (optional)
+ * @returns {Promise} - Promise that resolves when email is sent
+ */
+async function sendEmail(to, subject, text, html = null) {
+    try {
+        const mailOptions = {
+            from: process.env.SMTP_FROM || process.env.SMTP_USER,
+            to,
+            subject,
+            text,
+            html
+        };
+
+        const info = await transporter.sendMail(mailOptions);
+        console.log('Email sent:', info.messageId);
+        return info;
+    } catch (error) {
+        console.error('Error sending email:', error);
+        throw error;
+    }
 }
 
-// Send verification email
+/**
+ * Send a verification email
+ * @param {string} email - User's email address
+ * @param {string} token - Verification token
+ * @returns {Promise} - Promise that resolves when email is sent
+ */
 async function sendVerificationEmail(email, token) {
     const verificationUrl = `${process.env.BASE_URL}/verify?token=${token}`;
-    
-    const mailOptions = {
-        from: process.env.SMTP_FROM,
-        to: email,
-        subject: 'Verify your MMRoller account',
-        html: `
-            <h1>Welcome to MMRoller!</h1>
-            <p>Please click the link below to verify your email address:</p>
-            <a href="${verificationUrl}">${verificationUrl}</a>
-            <p>If you did not create an account, you can safely ignore this email.</p>
-        `
-    };
-    
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        console.error('Error sending verification email:', error);
-        return false;
-    }
+    const subject = 'Verify your email address';
+    const text = `Please click the following link to verify your email address: ${verificationUrl}`;
+    const html = `
+        <h1>Welcome to MM Roller!</h1>
+        <p>Please click the following link to verify your email address:</p>
+        <p><a href="${verificationUrl}">${verificationUrl}</a></p>
+        <p>If you did not request this verification, please ignore this email.</p>
+    `;
+
+    return sendEmail(email, subject, text, html);
 }
 
-// Send password reset email
+/**
+ * Send a password reset email
+ * @param {string} email - User's email address
+ * @param {string} token - Reset token
+ * @returns {Promise} - Promise that resolves when email is sent
+ */
 async function sendPasswordResetEmail(email, token) {
     const resetUrl = `${process.env.BASE_URL}/reset-password?token=${token}`;
-    
-    const mailOptions = {
-        from: process.env.SMTP_FROM,
-        to: email,
-        subject: 'Reset your MMRoller password',
-        html: `
-            <h1>Password Reset Request</h1>
-            <p>You have requested to reset your password. Click the link below to set a new password:</p>
-            <a href="${resetUrl}">${resetUrl}</a>
-            <p>If you did not request this password reset, you can safely ignore this email.</p>
-            <p>This link will expire in 1 hour.</p>
-        `
-    };
-    
-    try {
-        await transporter.sendMail(mailOptions);
-        return true;
-    } catch (error) {
-        console.error('Error sending password reset email:', error);
-        return false;
-    }
+    const subject = 'Reset your password';
+    const text = `Please click the following link to reset your password: ${resetUrl}`;
+    const html = `
+        <h1>Password Reset Request</h1>
+        <p>Please click the following link to reset your password:</p>
+        <p><a href="${resetUrl}">${resetUrl}</a></p>
+        <p>If you did not request a password reset, please ignore this email.</p>
+    `;
+
+    return sendEmail(email, subject, text, html);
 }
 
 module.exports = {
-    generateVerificationToken,
+    sendEmail,
     sendVerificationEmail,
     sendPasswordResetEmail
 }; 
