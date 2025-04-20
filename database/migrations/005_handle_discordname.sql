@@ -5,7 +5,14 @@ WHERE (username IS NULL OR username = '')
 AND discordname IS NOT NULL 
 AND discordname != '';
 
--- Then, create a temporary table without the discordname column
+-- Check if discordname column exists
+CREATE TABLE IF NOT EXISTS temp_check (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    discordname TEXT
+);
+
+-- If the above succeeds, discordname column exists
+-- Create a temporary table without the discordname column
 CREATE TABLE IF NOT EXISTS temp_users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT UNIQUE,
@@ -22,7 +29,7 @@ CREATE TABLE IF NOT EXISTS temp_users (
     reset_token_expiry DATETIME
 );
 
--- Copy data from old table to new table, using discordname for username if available
+-- Copy data from old table to new table
 INSERT INTO temp_users (
     id, username, email, password_hash, discord_id, avatar, 
     created_at, updated_at, verified, verification_token, 
@@ -30,10 +37,7 @@ INSERT INTO temp_users (
 )
 SELECT 
     id,
-    CASE 
-        WHEN discordname IS NOT NULL AND discordname != '' THEN discordname
-        ELSE username
-    END as username,
+    username,
     email, password_hash, discord_id, avatar,
     created_at, updated_at, verified, verification_token,
     last_verification_email, reset_token, reset_token_expiry
@@ -43,4 +47,7 @@ FROM users;
 DROP TABLE users;
 
 -- Rename new table to old name
-ALTER TABLE temp_users RENAME TO users; 
+ALTER TABLE temp_users RENAME TO users;
+
+-- Clean up temporary table
+DROP TABLE temp_check; 
