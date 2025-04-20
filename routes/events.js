@@ -79,11 +79,15 @@ router.get('/events/:id', async (req, res) => {
         // Get event participants
         const participants = await new Promise((resolve, reject) => {
             db.all(`
-                SELECT u.id, u.username as display_name,
+                SELECT u.id, u.username as display_name, u.id as user_id,
                        pes.mmr, pes.matches_played, pes.wins, pes.losses,
                        CASE WHEN ep.is_organizer = 1 THEN 1 ELSE 0 END as is_organizer,
                        CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
-                       CASE WHEN eb.user_id IS NOT NULL AND eb.status = 'active' THEN 1 ELSE 0 END as is_banned
+                       CASE WHEN eb.user_id IS NOT NULL AND eb.status = 'active' THEN 1 ELSE 0 END as is_banned,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins oa
+                           WHERE oa.organization_id = e.organization_id AND oa.user_id = u.id
+                       ) THEN 1 ELSE 0 END as is_org_admin
                 FROM event_participants ep
                 JOIN users u ON ep.user_id = u.id
                 JOIN events e ON ep.event_id = e.id
@@ -1310,7 +1314,11 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
                        pes.mmr, pes.matches_played, pes.wins, pes.losses,
                        CASE WHEN ep.is_organizer = 1 THEN 1 ELSE 0 END as is_organizer,
                        CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
-                       CASE WHEN eb.user_id IS NOT NULL AND eb.status = 'active' THEN 1 ELSE 0 END as is_banned
+                       CASE WHEN eb.user_id IS NOT NULL AND eb.status = 'active' THEN 1 ELSE 0 END as is_banned,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_admins oa
+                           WHERE oa.organization_id = e.organization_id AND oa.user_id = u.id
+                       ) THEN 1 ELSE 0 END as is_org_admin
                 FROM event_participants ep
                 JOIN users u ON ep.user_id = u.id
                 JOIN events e ON ep.event_id = e.id
@@ -1320,7 +1328,7 @@ router.get('/events/:id/participants/:userId', async (req, res) => {
                 WHERE u.id = ? AND ep.event_id = ?
             `;
             
-            db.get(query, [currentUserId, eventId], (err, row) => {
+            db.get(query, [userId, eventId], (err, row) => {
                 if (err) reject(err);
                 resolve(row);
             });

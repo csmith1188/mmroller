@@ -1,4 +1,3 @@
-- event organizers
 - mobile long text input error
 - invite system
 - What fields can non-players see in a match?

@@ -7,6 +7,12 @@
                 <a href="/profile/<%= participant.user_id %>" class="text-decoration-none">
                     <%= participant.display_name %>
                 </a>
+                <% if (participant.is_organizer) { %>
+                    <span class="badge bg-primary ms-2">Event Organizer</span>
+                <% } %>
+                <% if (participant.is_org_admin) { %>
+                    <span class="badge bg-info ms-2">Org Admin</span>
+                <% } %>
             </h2>
             <small class="text-muted">Joined on <%= new Date(participant.created_at).toLocaleDateString() %></small>
         </div>
