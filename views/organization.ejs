@@ -18,6 +18,45 @@
                                     <label for="description" class="form-label">Description</label>
                                     <textarea class="form-control" id="description" name="description" rows="3"><%= organization.description || '' %></textarea>
                                 </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Organization Visibility</label>
+                                    <div class="btn-group w-100" role="group">
+                                        <input type="radio" class="btn-check" name="visibility" id="hidden" value="hidden" autocomplete="off" 
+                                               <%= organization.visibility === 'hidden' ? 'checked' : '' %>>
+                                        <label class="btn btn-outline-secondary" for="hidden" title="Organization is hidden from listings">
+                                            Hidden
+                                        </label>
+
+                                        <input type="radio" class="btn-check" name="visibility" id="private" value="private" autocomplete="off"
+                                               <%= organization.visibility === 'private' ? 'checked' : '' %>>
+                                        <label class="btn btn-outline-secondary" for="private" title="Users must be invited to join">
+                                            Private
+                                        </label>
+
+                                        <input type="radio" class="btn-check" name="visibility" id="public" value="public" autocomplete="off"
+                                               <%= organization.visibility === 'public' ? 'checked' : '' %>>
+                                        <label class="btn btn-outline-secondary" for="public" title="Anyone can view, but must apply to join">
+                                            Public
+                                        </label>
+
+                                        <input type="radio" class="btn-check" name="visibility" id="open" value="open" autocomplete="off"
+                                               <%= organization.visibility === 'open' ? 'checked' : '' %>>
+                                        <label class="btn btn-outline-secondary" for="open" title="Anyone can join instantly">
+                                            Open
+                                        </label>
+                                    </div>
+                                    <div class="form-text mt-1">
+                                        <% if (organization.visibility === 'hidden') { %>
+                                            Organization is hidden from listings
+                                        <% } else if (organization.visibility === 'private') { %>
+                                            Users must be invited to join
+                                        <% } else if (organization.visibility === 'public') { %>
+                                            Anyone can view, but must apply to join
+                                        <% } else if (organization.visibility === 'open') { %>
+                                            Anyone can join instantly
+                                        <% } %>
+                                    </div>
+                                </div>
                                 <button type="submit" class="btn btn-primary">Update Organization</button>
                             </form>
                         <% } else { %>
@@ -61,213 +100,292 @@
             <div class="col-md-4">
                 <div class="card">
                     <div class="card-header">
-                        <h3 class="mb-0">Members</h3>
+                        <h3 class="mb-0">Members <% if (isMember) { %>(<%= members.length %>)<% } %></h3>
                     </div>
                     <div class="card-body">
                         <% if (!isMember) { %>
-                            <form action="/organizations/<%= organization.id %>/join" method="POST" class="mb-3">
-                                <button type="submit" class="btn btn-primary w-100">Join Organization</button>
-                            </form>
-                        <% } else if (!organization.is_creator) { %>
-                            <button type="button" class="btn btn-danger w-100 mb-3" data-bs-toggle="modal" data-bs-target="#leaveModal">
-                                Leave Organization
-                            </button>
+                            <% if (hasApplied) { %>
+                                <button type="button" class="btn btn-secondary w-100" disabled>Application Pending</button>
+                            <% } else if (canApply) { %>
+                                <form action="/organizations/<%= organization.id %>/apply" method="POST">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <%= organization.visibility === 'open' ? 'Join Organization' : 'Apply to Join' %>
+                                    </button>
+                                </form>
+                            <% } else if (organization.visibility === 'private') { %>
+                                <button type="button" class="btn btn-secondary w-100" disabled>Members Only</button>
+                            <% } %>
+                        <% } else { %>
+                            <% if (!organization.is_creator) { %>
+                                <button type="button" class="btn btn-danger w-100 mb-3" data-bs-toggle="modal" data-bs-target="#leaveModal">
+                                    Leave Organization
+                                </button>
 
-                            <!-- Leave Organization Modal -->
-                            <div class="modal fade" id="leaveModal" tabindex="-1">
-                                <div class="modal-dialog">
-                                    <div class="modal-content">
-                                        <div class="modal-header">
-                                            <h5 class="modal-title">Leave Organization</h5>
-                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                        </div>
-                                        <div class="modal-body">
-                                            <p>Are you sure you want to leave <strong><%= organization.name %></strong>?</p>
-                                            <p class="text-danger">This will remove you from all organization events and mark your matches as forfeit.</p>
-                                        </div>
-                                        <div class="modal-footer">
-                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                            <form action="/organizations/<%= organization.id %>/leave" method="POST">
-                                                <button type="submit" class="btn btn-danger">Leave Organization</button>
-                                            </form>
+                                <!-- Leave Organization Modal -->
+                                <div class="modal fade" id="leaveModal" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">Leave Organization</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <p>Are you sure you want to leave <strong><%= organization.name %></strong>?</p>
+                                                <p class="text-danger">This will remove you from all organization events and mark your matches as forfeit.</p>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                <form action="/organizations/<%= organization.id %>/leave" method="POST">
+                                                    <button type="submit" class="btn btn-danger">Leave Organization</button>
+                                                </form>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
-                        <% } %>
-                        
-                        <div class="list-group">
-                            <% members.forEach(member => { %>
-                                <div class="list-group-item">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <a href="/profile/<%= member.id %>" class="text-decoration-none"><%= member.display_name %></a>
-                                            <% if (member.is_admin) { %>
-                                                <span class="badge bg-primary ms-2">Admin</span>
-                                            <% } %>
-                                            <% if (member.is_creator) { %>
-                                                <span class="badge bg-success ms-2">Creator</span>
-                                            <% } %>
-                                        </div>
-                                        <% if (isAdmin && member.id !== userId) { %>
-                                            <div class="dropdown">
-                                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                                    Actions
-                                                </button>
-                                                <ul class="dropdown-menu">
-                                                    <% if (!member.is_creator) { %>
-                                                        <% if (member.is_admin) { %>
+                            <% } %>
+                            
+                            <div class="list-group">
+                                <% members.forEach(member => { %>
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <a href="/profile/<%= member.id %>" class="text-decoration-none"><%= member.display_name %></a>
+                                                <% if (member.is_admin) { %>
+                                                    <span class="badge bg-primary ms-2">Admin</span>
+                                                <% } %>
+                                                <% if (member.is_creator) { %>
+                                                    <span class="badge bg-success ms-2">Creator</span>
+                                                <% } %>
+                                            </div>
+                                            <% if (isAdmin && member.id !== userId) { %>
+                                                <div class="dropdown">
+                                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                        Actions
+                                                    </button>
+                                                    <ul class="dropdown-menu">
+                                                        <% if (!member.is_creator) { %>
+                                                            <% if (member.is_admin) { %>
+                                                                <li>
+                                                                    <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#demoteModal<%= member.id %>">
+                                                                        Remove Admin
+                                                                    </button>
+                                                                </li>
+                                                            <% } else { %>
+                                                                <li>
+                                                                    <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#promoteModal<%= member.id %>">
+                                                                        Promote to Admin
+                                                                    </button>
+                                                                </li>
+                                                            <% } %>
+                                                            <li><hr class="dropdown-divider"></li>
+                                                        <% } %>
+                                                        <% if (member.is_banned) { %>
                                                             <li>
-                                                                <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#demoteModal<%= member.id %>">
-                                                                    Remove Admin
+                                                                <button type="button" class="dropdown-item text-success" data-bs-toggle="modal" data-bs-target="#unbanModal<%= member.id %>">
+                                                                    Unban
                                                                 </button>
                                                             </li>
                                                         <% } else { %>
                                                             <li>
-                                                                <button type="button" class="dropdown-item" data-bs-toggle="modal" data-bs-target="#promoteModal<%= member.id %>">
-                                                                    Promote to Admin
+                                                                <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#kickModal<%= member.id %>">
+                                                                    Kick
+                                                                </button>
+                                                            </li>
+                                                            <li>
+                                                                <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#banModal<%= member.id %>">
+                                                                    Ban
                                                                 </button>
                                                             </li>
                                                         <% } %>
-                                                        <li><hr class="dropdown-divider"></li>
-                                                    <% } %>
-                                                    <% if (member.is_banned) { %>
-                                                        <li>
-                                                            <button type="button" class="dropdown-item text-success" data-bs-toggle="modal" data-bs-target="#unbanModal<%= member.id %>">
-                                                                Unban
-                                                            </button>
-                                                        </li>
-                                                    <% } else { %>
-                                                        <li>
-                                                            <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#kickModal<%= member.id %>">
-                                                                Kick
-                                                            </button>
-                                                        </li>
-                                                        <li>
-                                                            <button type="button" class="dropdown-item text-danger" data-bs-toggle="modal" data-bs-target="#banModal<%= member.id %>">
-                                                                Ban
-                                                            </button>
-                                                        </li>
-                                                    <% } %>
-                                                </ul>
-                                            </div>
+                                                    </ul>
+                                                </div>
 
-                                            <!-- Promote Modal -->
-                                            <div class="modal fade" id="promoteModal<%= member.id %>" tabindex="-1">
-                                                <div class="modal-dialog">
-                                                    <div class="modal-content">
-                                                        <div class="modal-header">
-                                                            <h5 class="modal-title">Promote to Admin</h5>
-                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                        </div>
-                                                        <div class="modal-body">
-                                                            <p>Are you sure you want to promote <strong><%= member.display_name %></strong> to admin?</p>
-                                                        </div>
-                                                        <div class="modal-footer">
-                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                            <form action="/organizations/<%= organization.id %>/promote/<%= member.id %>" method="POST">
-                                                                <button type="submit" class="btn btn-primary">Promote</button>
-                                                            </form>
+                                                <!-- Promote Modal -->
+                                                <div class="modal fade" id="promoteModal<%= member.id %>" tabindex="-1">
+                                                    <div class="modal-dialog">
+                                                        <div class="modal-content">
+                                                            <div class="modal-header">
+                                                                <h5 class="modal-title">Promote to Admin</h5>
+                                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <div class="modal-body">
+                                                                <p>Are you sure you want to promote <strong><%= member.display_name %></strong> to admin?</p>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <form action="/organizations/<%= organization.id %>/promote/<%= member.id %>" method="POST">
+                                                                    <button type="submit" class="btn btn-primary">Promote</button>
+                                                                </form>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </div>
 
-                                            <!-- Demote Modal -->
-                                            <div class="modal fade" id="demoteModal<%= member.id %>" tabindex="-1">
-                                                <div class="modal-dialog">
-                                                    <div class="modal-content">
-                                                        <div class="modal-header">
-                                                            <h5 class="modal-title">Remove Admin Status</h5>
-                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                        </div>
-                                                        <div class="modal-body">
-                                                            <p>Are you sure you want to remove admin status from <strong><%= member.display_name %></strong>?</p>
-                                                        </div>
-                                                        <div class="modal-footer">
-                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                            <form action="/organizations/<%= organization.id %>/remove-admin/<%= member.id %>" method="POST">
-                                                                <button type="submit" class="btn btn-danger">Remove Admin</button>
-                                                            </form>
+                                                <!-- Demote Modal -->
+                                                <div class="modal fade" id="demoteModal<%= member.id %>" tabindex="-1">
+                                                    <div class="modal-dialog">
+                                                        <div class="modal-content">
+                                                            <div class="modal-header">
+                                                                <h5 class="modal-title">Remove Admin Status</h5>
+                                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <div class="modal-body">
+                                                                <p>Are you sure you want to remove admin status from <strong><%= member.display_name %></strong>?</p>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <form action="/organizations/<%= organization.id %>/remove-admin/<%= member.id %>" method="POST">
+                                                                    <button type="submit" class="btn btn-danger">Remove Admin</button>
+                                                                </form>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </div>
 
-                                            <!-- Unban Modal -->
-                                            <div class="modal fade" id="unbanModal<%= member.id %>" tabindex="-1">
-                                                <div class="modal-dialog">
-                                                    <div class="modal-content">
-                                                        <div class="modal-header">
-                                                            <h5 class="modal-title">Unban Member</h5>
-                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                        </div>
-                                                        <div class="modal-body">
-                                                            <p>Are you sure you want to unban <strong><%= member.display_name %></strong> from the organization?</p>
-                                                            <p>They will be able to rejoin the organization.</p>
-                                                        </div>
-                                                        <div class="modal-footer">
-                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                            <form action="/organizations/<%= organization.id %>/unban/<%= member.id %>" method="POST">
-                                                                <button type="submit" class="btn btn-success">Unban</button>
-                                                            </form>
+                                                <!-- Kick Modal -->
+                                                <div class="modal fade" id="kickModal<%= member.id %>" tabindex="-1">
+                                                    <div class="modal-dialog">
+                                                        <div class="modal-content">
+                                                            <div class="modal-header">
+                                                                <h5 class="modal-title">Kick Member</h5>
+                                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <div class="modal-body">
+                                                                <p>Are you sure you want to kick <strong><%= member.display_name %></strong> from the organization?</p>
+                                                                <p class="text-danger">This will also remove them from all organization events and mark their matches as forfeit.</p>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <form action="/organizations/<%= organization.id %>/kick/<%= member.id %>" method="POST">
+                                                                    <button type="submit" class="btn btn-danger">Kick</button>
+                                                                </form>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </div>
 
-                                            <!-- Kick Modal -->
-                                            <div class="modal fade" id="kickModal<%= member.id %>" tabindex="-1">
-                                                <div class="modal-dialog">
-                                                    <div class="modal-content">
-                                                        <div class="modal-header">
-                                                            <h5 class="modal-title">Kick Member</h5>
-                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                        </div>
-                                                        <div class="modal-body">
-                                                            <p>Are you sure you want to kick <strong><%= member.display_name %></strong> from the organization?</p>
-                                                            <p class="text-danger">This will also remove them from all organization events and mark their matches as forfeit.</p>
-                                                        </div>
-                                                        <div class="modal-footer">
-                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                            <form action="/organizations/<%= organization.id %>/kick/<%= member.id %>" method="POST">
-                                                                <button type="submit" class="btn btn-danger">Kick</button>
-                                                            </form>
+                                                <!-- Ban Modal -->
+                                                <div class="modal fade" id="banModal<%= member.id %>" tabindex="-1">
+                                                    <div class="modal-dialog">
+                                                        <div class="modal-content">
+                                                            <div class="modal-header">
+                                                                <h5 class="modal-title">Ban Member</h5>
+                                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <div class="modal-body">
+                                                                <p>Are you sure you want to ban <strong><%= member.display_name %></strong> from the organization?</p>
+                                                                <p class="text-danger">This will kick them from the organization and prevent them from rejoining.</p>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <form action="/organizations/<%= organization.id %>/ban/<%= member.id %>" method="POST">
+                                                                    <button type="submit" class="btn btn-danger">Ban</button>
+                                                                </form>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </div>
 
-                                            <!-- Ban Modal -->
-                                            <div class="modal fade" id="banModal<%= member.id %>" tabindex="-1">
-                                                <div class="modal-dialog">
-                                                    <div class="modal-content">
-                                                        <div class="modal-header">
-                                                            <h5 class="modal-title">Ban Member</h5>
-                                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                                        </div>
-                                                        <div class="modal-body">
-                                                            <p>Are you sure you want to ban <strong><%= member.display_name %></strong> from the organization?</p>
-                                                            <p class="text-danger">This will kick them from the organization and prevent them from rejoining.</p>
-                                                        </div>
-                                                        <div class="modal-footer">
-                                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                                                            <form action="/organizations/<%= organization.id %>/ban/<%= member.id %>" method="POST">
-                                                                <button type="submit" class="btn btn-danger">Ban</button>
-                                                            </form>
+                                                <!-- Unban Modal -->
+                                                <div class="modal fade" id="unbanModal<%= member.id %>" tabindex="-1">
+                                                    <div class="modal-dialog">
+                                                        <div class="modal-content">
+                                                            <div class="modal-header">
+                                                                <h5 class="modal-title">Unban Member</h5>
+                                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                            </div>
+                                                            <div class="modal-body">
+                                                                <p>Are you sure you want to unban <strong><%= member.display_name %></strong> from the organization?</p>
+                                                                <p>They will be able to rejoin the organization.</p>
+                                                            </div>
+                                                            <div class="modal-footer">
+                                                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                                <form action="/organizations/<%= organization.id %>/unban/<%= member.id %>" method="POST">
+                                                                    <button type="submit" class="btn btn-success">Unban</button>
+                                                                </form>
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        <% } %>
+                                            <% } %>
+                                        </div>
                                     </div>
-                                </div>
-                            <% }); %>
-                        </div>
+                                <% }); %>
+                            </div>
+                        <% } %>
                     </div>
                 </div>
+
+                <% if (isAdmin && applications.length > 0) { %>
+                    <div class="card mb-4">
+                        <div class="card-header">
+                            <h5 class="mb-0">Applications</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="list-group">
+                                <% applications.forEach(application => { %>
+                                    <div class="list-group-item">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <h6 class="mb-1">
+                                                    <a href="/profile/<%= application.user_id %>" class="text-decoration-none">
+                                                        <%= application.display_name %>
+                                                    </a>
+                                                </h6>
+                                                <small class="text-muted">
+                                                    Applied: <%= new Date(application.applied_at).toLocaleString() %>
+                                                </small>
+                                            </div>
+                                            <div>
+                                                <form action="/organizations/<%= organization.id %>/accept/<%= application.user_id %>" method="POST" class="d-inline">
+                                                    <button type="submit" class="btn btn-success btn-sm">Accept</button>
+                                                </form>
+                                                <form action="/organizations/<%= organization.id %>/reject/<%= application.user_id %>" method="POST" class="d-inline">
+                                                    <button type="submit" class="btn btn-danger btn-sm">Reject</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </div>
+                                <% }); %>
+                            </div>
+                        </div>
+                    </div>
+                <% } %>
             </div>
         </div>
     </div>
 
-<%- include('partials/footer') %> 
+<%- include('partials/footer') %>
+
+<script>
+    document.querySelectorAll('input[name="visibility"]').forEach(input => {
+        input.addEventListener('change', async (e) => {
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = `/organizations/<%= organization.id %>/update`;
+            
+            // Add current name and description
+            const nameInput = document.createElement('input');
+            nameInput.type = 'hidden';
+            nameInput.name = 'name';
+            nameInput.value = document.querySelector('#name').value;
+            form.appendChild(nameInput);
+            
+            const descInput = document.createElement('input');
+            descInput.type = 'hidden';
+            descInput.name = 'description';
+            descInput.value = document.querySelector('#description').value;
+            form.appendChild(descInput);
+            
+            // Add visibility value
+            const visInput = document.createElement('input');
+            visInput.type = 'hidden';
+            visInput.name = 'visibility';
+            visInput.value = e.target.value;
+            form.appendChild(visInput);
+            
+            document.body.appendChild(form);
+            form.submit();
+        });
+    });
+</script> 

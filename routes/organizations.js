@@ -66,8 +66,13 @@ router.post('/organizations', (req, res) => {
             function(err) {
                 if (err) {
                     console.error('Error creating organization:', err);
-                    db.run('ROLLBACK');
-                    return res.status(500).render('error', { message: 'Error creating organization' });
+                    db.run('ROLLBACK', (rollbackErr) => {
+                        if (rollbackErr) {
+                            console.error('Error rolling back transaction:', rollbackErr);
+                        }
+                        return res.status(500).render('error', { message: 'Error creating organization' });
+                    });
+                    return;
                 }
                 
                 const orgId = this.lastID;
@@ -79,8 +84,13 @@ router.post('/organizations', (req, res) => {
                     (err) => {
                         if (err) {
                             console.error('Error adding creator to organization:', err);
-                            db.run('ROLLBACK');
-                            return res.status(500).render('error', { message: 'Error adding creator to organization' });
+                            db.run('ROLLBACK', (rollbackErr) => {
+                                if (rollbackErr) {
+                                    console.error('Error rolling back transaction:', rollbackErr);
+                                }
+                                return res.status(500).render('error', { message: 'Error adding creator to organization' });
+                            });
+                            return;
                         }
                         
                         // Add creator as admin
@@ -90,16 +100,26 @@ router.post('/organizations', (req, res) => {
                             (err) => {
                                 if (err) {
                                     console.error('Error adding creator as admin:', err);
-                                    db.run('ROLLBACK');
-                                    return res.status(500).render('error', { message: 'Error adding creator as admin' });
+                                    db.run('ROLLBACK', (rollbackErr) => {
+                                        if (rollbackErr) {
+                                            console.error('Error rolling back transaction:', rollbackErr);
+                                        }
+                                        return res.status(500).render('error', { message: 'Error adding creator as admin' });
+                                    });
+                                    return;
                                 }
                                 
                                 // Commit transaction
                                 db.run('COMMIT', (err) => {
                                     if (err) {
                                         console.error('Error committing transaction:', err);
-                                        db.run('ROLLBACK');
-                                        return res.status(500).render('error', { message: 'Error creating organization' });
+                                        db.run('ROLLBACK', (rollbackErr) => {
+                                            if (rollbackErr) {
+                                                console.error('Error rolling back transaction:', rollbackErr);
+                                            }
+                                            return res.status(500).render('error', { message: 'Error creating organization' });
+                                        });
+                                        return;
                                     }
                                     
                                     res.redirect('/profile');
@@ -114,110 +134,145 @@ router.post('/organizations', (req, res) => {
 });
 
 // Organization details route
-router.get('/organizations/:id', (req, res) => {
+router.get('/organizations/:id', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const orgId = req.params.id;
     const userId = req.session.userId;
-    
-    // Get organization details with member status and admin check
-    db.get(`
-        SELECT o.*, 
-               CASE WHEN om.user_id IS NOT NULL THEN 1 ELSE 0 END as is_member,
-               CASE WHEN EXISTS (
-                   SELECT 1 FROM organization_admins 
-                   WHERE organization_id = o.id AND user_id = ?
-               ) THEN 1 ELSE 0 END as is_admin
-        FROM organizations o
-        LEFT JOIN organization_members om ON o.id = om.organization_id AND om.user_id = ?
-        WHERE o.id = ?
-    `, [userId, userId, orgId], (err, organization) => {
-        if (err || !organization) {
-            console.error('Error fetching organization:', err);
+
+    try {
+        // Get organization details
+        const organization = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT o.*, u.username as creator_name FROM organizations o JOIN users u ON o.created_by = u.id WHERE o.id = ?',
+                [orgId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(row);
+                }
+            );
+        });
+
+        if (!organization) {
             return res.status(404).render('error', { message: 'Organization not found' });
         }
 
-        // Format the organization description based on admin status
-        organization.description = organization.is_admin ? 
-            organization.description : 
-            formatDescriptionNoTruncate(organization.description);
+        // Check if user is admin
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
+                [orgId, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
 
-        // Check if user is banned from the organization
-        db.get(`
-            SELECT 1 FROM organization_bans
-            WHERE organization_id = ? AND user_id = ? AND status = 'active'
-        `, [orgId, userId], (err, isBanned) => {
-            if (err) {
-                console.error('Error checking ban status:', err);
-                return res.status(500).render('error', { message: 'Error checking ban status' });
+        // Check if user is member
+        const isMember = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_members WHERE organization_id = ? AND user_id = ?',
+                [orgId, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        // Enforce visibility rules
+        if (!isAdmin && !isMember) {
+            if (organization.visibility === 'hidden') {
+                return res.status(404).render('error', { message: 'Organization not found' });
             }
+        }
 
-            if (isBanned && !organization.is_admin) {
-                return res.status(403).render('error', { message: 'You are banned from this organization' });
-            }
+        // Check if user has applied
+        const hasApplied = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_applications WHERE organization_id = ? AND user_id = ?',
+                [orgId, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
 
-            // Get organization members
+        // Get organization members
+        const members = await new Promise((resolve, reject) => {
             db.all(`
-                SELECT u.id, u.username as display_name,
-                       CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator,
-                       CASE WHEN EXISTS (
-                           SELECT 1 FROM organization_admins 
-                           WHERE organization_id = o.id AND user_id = u.id
-                       ) THEN 1 ELSE 0 END as is_admin,
-                       CASE WHEN ob.status = 'active' THEN 1 ELSE 0 END as is_banned
+                SELECT u.id, u.username as display_name, 
+                       CASE WHEN oa.user_id IS NOT NULL THEN 1 ELSE 0 END as is_admin,
+                       CASE WHEN o.created_by = u.id THEN 1 ELSE 0 END as is_creator
                 FROM users u
                 JOIN organization_members om ON u.id = om.user_id
+                LEFT JOIN organization_admins oa ON oa.organization_id = om.organization_id AND oa.user_id = om.user_id
                 JOIN organizations o ON o.id = om.organization_id
-                LEFT JOIN organization_bans ob ON ob.organization_id = o.id AND ob.user_id = u.id
                 WHERE om.organization_id = ?
-                AND (? = 1 OR NOT EXISTS (
-                    SELECT 1 FROM organization_bans 
-                    WHERE organization_id = o.id AND user_id = u.id AND status = 'active'
-                ))
                 ORDER BY u.username
-            `, [orgId, organization.is_admin], (err, members) => {
-                if (err) {
-                    console.error('Error fetching members:', err);
-                    return res.status(500).render('error', { message: 'Error fetching members' });
-                }
-
-                // Get organization events
-                db.all(`
-                    SELECT e.*,
-                           COUNT(DISTINCT ep.user_id) as participant_count
-                    FROM events e
-                    LEFT JOIN event_participants ep ON e.id = ep.event_id
-                    WHERE e.organization_id = ?
-                    AND (? = 1 OR NOT EXISTS (
-                        SELECT 1 FROM event_bans 
-                        WHERE event_id = e.id AND user_id = ? AND status = 'active'
-                    ))
-                    GROUP BY e.id
-                    ORDER BY e.start_date DESC
-                `, [orgId, organization.is_admin, userId], (err, events) => {
-                    if (err) {
-                        console.error('Error fetching events:', err);
-                        return res.status(500).render('error', { message: 'Error fetching events' });
-                    }
-
-                    // Format event descriptions
-                    events.forEach(event => {
-                        event.description = formatDescription(event.description);
-                    });
-
-                    res.render('organization', {
-                        organization,
-                        members,
-                        events,
-                        applications: [],
-                        userId,
-                        isMember: organization.is_member,
-                        isAdmin: organization.is_admin
-                    });
-                });
+            `, [orgId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
             });
         });
-    });
+
+        // Get organization events
+        const events = await new Promise((resolve, reject) => {
+            db.all(`
+                SELECT e.*, 
+                       CASE WHEN ep.user_id IS NOT NULL THEN 1 ELSE 0 END as is_participant
+                FROM events e
+                LEFT JOIN event_participants ep ON e.id = ep.event_id AND ep.user_id = ?
+                WHERE e.organization_id = ?
+                ORDER BY e.start_date DESC
+            `, [userId, orgId], (err, rows) => {
+                if (err) reject(err);
+                resolve(rows);
+            });
+        });
+
+        // Get organization applications if user is admin
+        let applications = [];
+        if (isAdmin) {
+            applications = await new Promise((resolve, reject) => {
+                db.all(`
+                    SELECT oa.*, u.username as display_name
+                    FROM organization_applications oa
+                    JOIN users u ON oa.user_id = u.id
+                    WHERE oa.organization_id = ?
+                    ORDER BY oa.applied_at DESC
+                `, [orgId], (err, rows) => {
+                    if (err) reject(err);
+                    resolve(rows);
+                });
+            });
+        }
+
+        // Determine if user can apply based on visibility rules
+        const canApply = !isMember && !hasApplied && userId && 
+                        (organization.visibility === 'public' || organization.visibility === 'open');
+
+        res.render('organization', {
+            organization: {
+                ...organization,
+                is_admin: isAdmin,
+                is_creator: organization.created_by === userId
+            },
+            members,
+            applications,
+            events,
+            isAdmin,
+            isMember,
+            hasApplied,
+            canApply,
+            userId
+        });
+    } catch (error) {
+        console.error('Error fetching organization details:', error);
+        res.status(500).render('error', { message: 'Error fetching organization details' });
+    }
 });
 
 // Organization join route
@@ -676,7 +731,7 @@ router.get('/organizations', (req, res) => {
     const limit = 10; // Number of items per page
     const offset = (page - 1) * limit;
 
-    // Get user's organizations with pagination
+    // Get user's organizations with pagination (including hidden ones since user is a member)
     db.all(`
         SELECT o.*, 
                COUNT(om2.user_id) as member_count,
@@ -724,7 +779,7 @@ router.get('/organizations', (req, res) => {
                 return res.status(500).render('error', { message: 'Error counting user organizations' });
             }
 
-            // Get other organizations with pagination
+            // Get other organizations with pagination (excluding hidden ones)
             db.all(`
                 SELECT o.*, 
                        COUNT(om.user_id) as member_count,
@@ -736,18 +791,23 @@ router.get('/organizations', (req, res) => {
                        CASE WHEN EXISTS (
                            SELECT 1 FROM organization_members 
                            WHERE organization_id = o.id AND user_id = ?
-                       ) THEN 1 ELSE 0 END as is_member
+                       ) THEN 1 ELSE 0 END as is_member,
+                       CASE WHEN EXISTS (
+                           SELECT 1 FROM organization_applications
+                           WHERE organization_id = o.id AND user_id = ?
+                       ) THEN 1 ELSE 0 END as has_applied
                 FROM organizations o
                 LEFT JOIN organization_members om ON o.id = om.organization_id
                 WHERE NOT EXISTS (
                     SELECT 1 FROM organization_members 
                     WHERE organization_id = o.id AND user_id = ?
                 )
+                AND o.visibility != 'hidden'
                 AND (o.name LIKE ? OR o.description LIKE ?)
                 GROUP BY o.id
                 ORDER BY o.created_at DESC
                 LIMIT ? OFFSET ?
-            `, [userId, userId, userId, userId, `%${search}%`, `%${search}%`, limit, offset], (err, otherOrgs) => {
+            `, [userId, userId, userId, userId, userId, `%${search}%`, `%${search}%`, limit, offset], (err, otherOrgs) => {
                 if (err) {
                     console.error('Error fetching all organizations:', err);
                     return res.status(500).render('error', { message: 'Error fetching all organizations' });
@@ -758,7 +818,7 @@ router.get('/organizations', (req, res) => {
                     org.description = formatDescription(org.description);
                 });
 
-                // Get total count of other organizations for pagination
+                // Get total count of other organizations for pagination (excluding hidden ones)
                 db.get(`
                     SELECT COUNT(DISTINCT o.id) as count
                     FROM organizations o
@@ -766,6 +826,7 @@ router.get('/organizations', (req, res) => {
                         SELECT 1 FROM organization_members 
                         WHERE organization_id = o.id AND user_id = ?
                     )
+                    AND o.visibility != 'hidden'
                     AND (o.name LIKE ? OR o.description LIKE ?)
                 `, [userId, `%${search}%`, `%${search}%`], (err, otherOrgsCount) => {
                     if (err) {
@@ -797,7 +858,7 @@ router.post('/organizations/:id/update', async (req, res) => {
     const requireLogin = req.app.locals.requireLogin;
     const db = req.app.locals.db;
     const { id } = req.params;
-    const { name, description } = req.body;
+    const { name, description, visibility } = req.body;
     const userId = req.session.userId;
 
     try {
@@ -817,11 +878,17 @@ router.post('/organizations/:id/update', async (req, res) => {
             return res.status(403).render('error', { message: 'Unauthorized: You must be an admin to update the organization' });
         }
 
+        // Validate visibility value
+        const validVisibilities = ['hidden', 'private', 'public', 'open'];
+        if (visibility && !validVisibilities.includes(visibility)) {
+            return res.status(400).render('error', { message: 'Invalid visibility value' });
+        }
+
         // Update organization
         await new Promise((resolve, reject) => {
             db.run(
-                'UPDATE organizations SET name = ?, description = ? WHERE id = ?',
-                [name, description, id],
+                'UPDATE organizations SET name = ?, description = ?, visibility = ? WHERE id = ?',
+                [name, description, visibility || 'private', id],
                 (err) => {
                     if (err) reject(err);
                     resolve();
@@ -942,6 +1009,248 @@ router.post('/organizations/:id/leave', async (req, res) => {
     } catch (error) {
         console.error('Error leaving organization:', error);
         return res.status(500).render('error', { message: 'Error leaving organization' });
+    }
+});
+
+// Apply to join organization
+router.post('/organizations/:id/apply', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const orgId = req.params.id;
+    const userId = req.session.userId;
+
+    if (!userId) {
+        return res.status(401).render('error', { message: 'You must be logged in to apply to an organization' });
+    }
+
+    try {
+        // Get organization visibility
+        const org = await new Promise((resolve, reject) => {
+            db.get('SELECT visibility FROM organizations WHERE id = ?', [orgId], (err, row) => {
+                if (err) reject(err);
+                resolve(row);
+            });
+        });
+
+        if (!org) {
+            return res.status(404).render('error', { message: 'Organization not found' });
+        }
+
+        // Check if applications are allowed
+        if (org.visibility !== 'public' && org.visibility !== 'open') {
+            return res.status(403).render('error', { message: 'This organization is not accepting applications' });
+        }
+
+        // Check if user is already a member
+        const isMember = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_members WHERE organization_id = ? AND user_id = ?',
+                [orgId, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (isMember) {
+            return res.status(400).render('error', { message: 'You are already a member of this organization' });
+        }
+
+        // Check if user has already applied
+        const hasApplied = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_applications WHERE organization_id = ? AND user_id = ?',
+                [orgId, userId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (hasApplied) {
+            return res.status(400).render('error', { message: 'You have already applied to this organization' });
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            if (org.visibility === 'open') {
+                // For open organizations, directly add as member
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        'INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)',
+                        [orgId, userId],
+                        (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        }
+                    );
+                });
+            } else {
+                // For public organizations, create application
+                await new Promise((resolve, reject) => {
+                    db.run(
+                        'INSERT INTO organization_applications (organization_id, user_id) VALUES (?, ?)',
+                        [orgId, userId],
+                        (err) => {
+                            if (err) reject(err);
+                            resolve();
+                        }
+                    );
+                });
+            }
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/organizations/${orgId}`);
+        } catch (error) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error processing application:', error);
+        res.status(500).render('error', { message: 'Error processing application' });
+    }
+});
+
+// Accept organization application
+router.post('/organizations/:id/accept/:userId', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const orgId = req.params.id;
+    const userId = req.params.userId;
+    const currentUserId = req.session.userId;
+
+    try {
+        // Verify user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
+                [orgId, currentUserId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (!isAdmin) {
+            return res.status(403).render('error', { message: 'Unauthorized: Only organization admins can accept applications' });
+        }
+
+        // Start transaction
+        await new Promise((resolve, reject) => {
+            db.run('BEGIN TRANSACTION', (err) => {
+                if (err) reject(err);
+                resolve();
+            });
+        });
+
+        try {
+            // Add user as member
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)',
+                    [orgId, userId],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            // Remove application
+            await new Promise((resolve, reject) => {
+                db.run(
+                    'DELETE FROM organization_applications WHERE organization_id = ? AND user_id = ?',
+                    [orgId, userId],
+                    (err) => {
+                        if (err) reject(err);
+                        resolve();
+                    }
+                );
+            });
+
+            // Commit transaction
+            await new Promise((resolve, reject) => {
+                db.run('COMMIT', (err) => {
+                    if (err) reject(err);
+                    resolve();
+                });
+            });
+
+            res.redirect(`/organizations/${orgId}`);
+        } catch (error) {
+            // Rollback transaction on error
+            await new Promise((resolve) => {
+                db.run('ROLLBACK', () => resolve());
+            });
+            throw error;
+        }
+    } catch (error) {
+        console.error('Error accepting application:', error);
+        res.status(500).render('error', { message: 'Error accepting application' });
+    }
+});
+
+// Reject organization application
+router.post('/organizations/:id/reject/:userId', async (req, res) => {
+    const requireLogin = req.app.locals.requireLogin;
+    const db = req.app.locals.db;
+    const orgId = req.params.id;
+    const userId = req.params.userId;
+    const currentUserId = req.session.userId;
+
+    try {
+        // Verify user is admin of the organization
+        const isAdmin = await new Promise((resolve, reject) => {
+            db.get(
+                'SELECT 1 FROM organization_admins WHERE organization_id = ? AND user_id = ?',
+                [orgId, currentUserId],
+                (err, row) => {
+                    if (err) reject(err);
+                    resolve(!!row);
+                }
+            );
+        });
+
+        if (!isAdmin) {
+            return res.status(403).render('error', { message: 'Unauthorized: Only organization admins can reject applications' });
+        }
+
+        // Delete the application
+        await new Promise((resolve, reject) => {
+            db.run(
+                'DELETE FROM organization_applications WHERE organization_id = ? AND user_id = ?',
+                [orgId, userId],
+                (err) => {
+                    if (err) reject(err);
+                    resolve();
+                }
+            );
+        });
+
+        res.redirect(`/organizations/${orgId}`);
+    } catch (error) {
+        console.error('Error rejecting application:', error);
+        res.status(500).render('error', { message: 'Error rejecting application' });
     }
 });
 

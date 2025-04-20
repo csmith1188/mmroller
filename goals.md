@@ -1,24 +1,24 @@
-- date out of range error
-- all errors catch
-- custom field logging
-- events require applications toggle
-- What fields can non-players see in a match?
-- links to profiles in applications
-- event organizers
-- remove query param messages from participants
-- require admin approval: can't auto-complete match with matching scores
-- user profile description
-- unified alerts and feedback modal
-- verify discorders can change username and description but not email
-- custom fields foldout if too long
 - org privacy toggle
-- invite system
+- org privacy handling
 - only org members apply to events
+- events require applications toggle
+- event organizers
+- custom fields foldout if too long
+- What fields can non-players see in a match?
+- auto save results only saves one score
+
+- require admin approval: can't auto-complete match with matching scores
+- invite system
+- icons for actions/discord/etc
+- submission fields are reversed ?? can't replicate
+- custom field logging
+- all errors catch
+- scores swapped, but I can't figure out why
+- user profile description
+- remove query param messages from participants / unified alerts and feedback modal
 - orgs in your profile even when banned
 - does banning from orgs kick from events, making them ununbannable?
 - forfeit kicked/banned handling (undo matche results)
-- icons for actions/discord/etc
-- submission fields are reversed ?? can't replicate
 - Teams
 - Tournaments
 - stylesheet

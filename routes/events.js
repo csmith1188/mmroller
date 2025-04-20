@@ -453,7 +453,33 @@ router.post('/organizations/:id/events', async (req, res) => {
     const userId = req.session.userId;
 
     if (!userId) {
-        return res.status(401).send('You must be logged in to create an event');
+        return res.status(401).render('error', { message: 'You must be logged in to create an event' });
+    }
+
+    // Validate required fields
+    if (!name || !name.trim()) {
+        return res.status(400).render('error', { message: 'Event name is required' });
+    }
+
+    // Validate dates
+    let startDate, endDate;
+    try {
+        if (!start_date || !end_date) {
+            return res.status(400).render('error', { message: 'Both start and end dates are required' });
+        }
+
+        startDate = new Date(start_date);
+        endDate = new Date(end_date);
+        
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+            return res.status(400).render('error', { message: 'Invalid date format' });
+        }
+        
+        if (startDate >= endDate) {
+            return res.status(400).render('error', { message: 'End date must be after start date' });
+        }
+    } catch (error) {
+        return res.status(400).render('error', { message: 'Invalid date format' });
     }
 
     try {
@@ -470,7 +496,7 @@ router.post('/organizations/:id/events', async (req, res) => {
         });
 
         if (!isAdmin) {
-            return res.status(403).send('Unauthorized: Only organization admins can create events');
+            return res.status(403).render('error', { message: 'Unauthorized: Only organization admins can create events' });
         }
 
         // Start transaction
@@ -482,11 +508,11 @@ router.post('/organizations/:id/events', async (req, res) => {
         });
 
         try {
-            // Create event
+            // Create event with properly formatted dates
             const eventId = await new Promise((resolve, reject) => {
                 db.run(
                     'INSERT INTO events (name, description, organization_id, start_date, end_date, hidden, lowest_score_wins) VALUES (?, ?, ?, ?, ?, ?, ?)',
-                    [name, description, orgId, start_date, end_date, hidden ? 1 : 0, lowest_score_wins ? 1 : 0],
+                    [name.trim(), description?.trim() || null, orgId, startDate.toISOString(), endDate.toISOString(), hidden ? 1 : 0, lowest_score_wins ? 1 : 0],
                     function(err) {
                         if (err) reject(err);
                         resolve(this.lastID);
@@ -536,7 +562,7 @@ router.post('/organizations/:id/events', async (req, res) => {
         }
     } catch (error) {
         console.error('Error creating event:', error);
-        res.status(500).send('Error creating event');
+        return res.status(500).render('error', { message: 'Error creating event: ' + error.message });
     }
 });
 
