@@ -1039,17 +1039,13 @@ router.post('/organizations/:id/apply', async (req, res) => {
     }
 
     try {
-        // Get organization visibility and check if user is banned
+        // Get organization details and check if user is banned
         const org = await new Promise((resolve, reject) => {
             db.get(`
-                SELECT o.visibility,
-                       CASE WHEN EXISTS (
-                           SELECT 1 FROM organization_bans 
-                           WHERE organization_id = o.id 
-                           AND user_id = ? 
-                           AND status = 'active'
-                       ) THEN 1 ELSE 0 END as is_banned
-                FROM organizations o 
+                SELECT o.*, 
+                       CASE WHEN ob.user_id IS NOT NULL AND ob.status = 'active' THEN 1 ELSE 0 END as is_banned
+                FROM organizations o
+                LEFT JOIN organization_bans ob ON o.id = ob.organization_id AND ob.user_id = ?
                 WHERE o.id = ?
             `, [userId, orgId], (err, row) => {
                 if (err) reject(err);
@@ -1061,13 +1057,9 @@ router.post('/organizations/:id/apply', async (req, res) => {
             return res.status(404).render('error', { message: 'Organization not found' });
         }
 
+        // Check if user is banned
         if (org.is_banned) {
             return res.status(403).render('error', { message: 'You are banned from this organization' });
-        }
-
-        // Check if applications are allowed
-        if (org.visibility !== 'public' && org.visibility !== 'open') {
-            return res.status(403).render('error', { message: 'This organization is not accepting applications' });
         }
 
         // Check if user is already a member
@@ -1112,7 +1104,7 @@ router.post('/organizations/:id/apply', async (req, res) => {
 
         try {
             if (org.visibility === 'open') {
-                // For open organizations, directly add as member
+                // For open organizations, automatically add as member
                 await new Promise((resolve, reject) => {
                     db.run(
                         'INSERT INTO organization_members (organization_id, user_id) VALUES (?, ?)',
@@ -1123,29 +1115,11 @@ router.post('/organizations/:id/apply', async (req, res) => {
                         }
                     );
                 });
-
-                // Also automatically join all open events in this organization
-                await new Promise((resolve, reject) => {
-                    db.run(`
-                        INSERT INTO event_participants (event_id, user_id)
-                        SELECT id, ?
-                        FROM events
-                        WHERE organization_id = ?
-                        AND visibility = 'open'
-                        AND NOT EXISTS (
-                            SELECT 1 FROM event_participants
-                            WHERE event_id = events.id AND user_id = ?
-                        )
-                    `, [userId, orgId, userId], (err) => {
-                        if (err) reject(err);
-                        resolve();
-                    });
-                });
             } else {
-                // For public organizations, create application
+                // For other organizations, create application
                 await new Promise((resolve, reject) => {
                     db.run(
-                        'INSERT INTO organization_applications (organization_id, user_id) VALUES (?, ?)',
+                        'INSERT INTO organization_applications (organization_id, user_id, applied_at) VALUES (?, ?, datetime("now"))',
                         [orgId, userId],
                         (err) => {
                             if (err) reject(err);

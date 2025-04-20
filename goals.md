@@ -1,5 +1,5 @@
 - event organizers
-- custom fields foldout if too long
+- mobile long text input error
 - What fields can non-players see in a match?
 - auto save results only saves one score
 

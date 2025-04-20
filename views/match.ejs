@@ -6,6 +6,36 @@
     <title>Match Details - MM Roller</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/style.css">
+    <style>
+        .truncate-text {
+            max-height: 8em;
+            overflow: hidden;
+            position: relative;
+        }
+        .truncate-text.expanded {
+            max-height: none;
+        }
+        .truncate-text::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 2em;
+            background: linear-gradient(to bottom, transparent, white);
+        }
+        .truncate-text.expanded::after {
+            display: none;
+        }
+        .show-more {
+            cursor: pointer;
+            color: #0d6efd;
+            text-decoration: underline;
+        }
+        .show-more:hover {
+            color: #0a58ca;
+        }
+    </style>
 </head>
 <body>
     <%- include('partials/header', { title: 'Match Details' }) %>
@@ -206,9 +236,9 @@
                                                                 <% }
                                                             %>
                                                         <% } else if (response.field_type === 'long') { %>
-                                                            <div style="white-space: pre-wrap;"><%= response.response %></div>
+                                                            <div class="truncate-text" style="white-space: pre-wrap;"><%= response.response || 'Not provided' %></div>
                                                         <% } else { %>
-                                                            <div><%= response.response %></div>
+                                                            <%= response.response || 'Not provided' %>
                                                         <% } %>
                                                     </div>
                                                 <% }); %>
@@ -401,5 +431,30 @@
     <%- include('partials/footer') %>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // Add truncation to all text fields
+            document.querySelectorAll('.truncate-text').forEach(element => {
+                const text = element.textContent;
+                const maxLength = 128;
+                const maxLines = 8;
+                
+                // Check if text needs truncation
+                if (text.length > maxLength || text.split('\n').length > maxLines) {
+                    // Add show more/less button
+                    const button = document.createElement('a');
+                    button.className = 'show-more';
+                    button.textContent = 'Show more';
+                    element.parentNode.insertBefore(button, element.nextSibling);
+                    
+                    // Add click handler
+                    button.addEventListener('click', function() {
+                        element.classList.toggle('expanded');
+                        button.textContent = element.classList.contains('expanded') ? 'Show less' : 'Show more';
+                    });
+                }
+            });
+        });
+    </script>
 </body>
 </html> 
